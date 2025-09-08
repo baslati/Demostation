@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro">
+
+  <!-- Macro: erzeugt eine quadratische Elementareinheit, für die 4 gleichen Platten -->
+  <xacro:macro name="elementary_unit" params="
+      prefix
+      parent:=station
+      size:=0.5        
+      height:=0.06
+      pos_on_station:= '0 0'      
+      rgba:='0.0 0.0 0.0 1.0'">
+            
+      <link name="${prefix}_KOS"/>
+        <joint name="${prefix}_to_parent" type="fixed">
+          <parent link="${parent}"/>
+          <child  link="${prefix}_KOS"/>
+          <origin xyz="${pos_on_station} 0" rpy="0 0 0"/>
+        </joint>
+      
+      <link name="${prefix}_cube">
+        <visual>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry><box size="${size} ${size} ${height}"/></geometry>
+            <material name="${prefix}_e_mat"><color rgba="${rgba}"/></material>
+        </visual>
+        <collision>
+          <origin xyz="0 0 0" rpy="0 0 0"/>
+          <geometry><box size="${size} ${size} ${height}"/></geometry>
+        </collision>
+      </link>
+       
+      <joint name="${prefix}_kos_cube" type="fixed">
+	      <parent link="${prefix}_KOS"/>
+	      <child  link="${prefix}_cube"/>
+	      <origin xyz="${0.5*size} ${0.5*size} ${0.5*height}" rpy="0 0 0"/>
+      </joint>
+
+  </xacro:macro>
+</robot>

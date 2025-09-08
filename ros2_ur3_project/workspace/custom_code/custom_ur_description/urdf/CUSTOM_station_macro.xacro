@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro">
+
+  <!-- Macro: erzeugt eine quadratische Station mit Mount-Frame oben -->
+  <!-- world bleibt Root; station_top ist der Anbaupunkt für den Roboter -->
+  <xacro:macro name="station" params="
+    parent:=world
+    size:=1.0        
+    height:=1.0          
+	robot_mount_xy:='1.0 1.0'
+	robot_mount_z:=1.0 
+	robot_mount_yaw:=0.0   
+	rgba_grey:='0.4 0.4 0.4 0.5'
+	rgba_blue:='0.0 0.0 1.0 0.5'
+	rgba_black:='0.0 0.0 0.0 0.5'">
+  <!-- Bindet Station an world -->
+	<link name="station"/>
+	<joint name="world_to_station" type="fixed">
+	    <parent link="${parent}"/>
+	    <child  link="station"/>
+	    <origin xyz="0 0 ${height}" rpy="0 0 0"/>
+	</joint>
+
+  <!-- Erstellt den Tisch, unterer Quader -->
+	<link name="station_cube">
+		<visual>
+			<origin xyz="0 0 0" rpy="0 0 0"/>
+			<geometry><box size="${size} ${size} ${height}"/></geometry>
+			<material name="station_mat"><color rgba="${rgba_grey}"/></material>
+		</visual>
+		<collision>
+			<origin xyz="0 0 0" rpy="0 0 0"/>
+			<geometry><box size="${size} ${size} ${height}"/></geometry>
+		</collision>
+	</link>
+		<joint name="station_to_cube" type="fixed">
+			<parent link="station"/>
+			<child  link="station_cube"/>
+			<!-- hebt den Würfel um height/2, sodass seine Unterseite bei station.z=0 liegt -->
+			<origin xyz="${0.5*size} ${0.5*size} ${-0.5*height}" rpy="0 0 0"/>
+	  	</joint>
+
+  <!-- Definiert station_top, dort wird der Roboter gemountet -->
+	<link name="station_top"/>
+		<joint name="station_to_top" type="fixed">
+			<parent link="station"/>
+			<child  link="station_top"/>
+			<origin xyz="0.25 0.25 0.06" rpy="0 0 1.5708"/>
+		</joint>
+	  
+  <!-- Erstellt 4 Platten auf der Station aus der Macro -->
+	<xacro:include filename="$(find custom_ur_description)/urdf/CUSTOM_elementary_unit_macro.xacro"/>
+		<xacro:elementary_unit prefix="u1" pos_on_station="0.0 0.0" rgba="${rgba_black}"/>
+		<xacro:elementary_unit prefix="u2" pos_on_station="0.5 0.0" rgba="${rgba_blue}"/>
+		<xacro:elementary_unit prefix="u3" pos_on_station="0.0 0.5" rgba="${rgba_blue}"/>
+		<xacro:elementary_unit prefix="u4" pos_on_station="0.5 0.5" rgba="${rgba_blue}"/>
+	</xacro:macro>
+
+</robot>

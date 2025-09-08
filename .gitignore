@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ROS 2 build/install/log
+build/
+install/
+log/
+colcon_ws/
+*.log
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Docker
+*.deb
+*.tar
+*.img
+
+# System/Editor
+.DS_Store
+Thumbs.db
+
+# Sonstiges
+.env
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# ROS 2 workspace specific
+ros2_ur3_project/workspace/custom_code/__pycache__/
+ros2_ur3_project/workspace/custom_code/*.pyc
+ros2_ur3_project/workspace/custom_code/*.log
+ros2_ur3_project/workspace/custom_code/build/
+ros2_ur3_project/workspace/custom_code/install/
+ros2_ur3_project/workspace/custom_code/log/
+ros2_ur3_project/workspace/custom_code/.vscode/
+ros2_ur3_project/workspace/custom_code/*.swp
+ros2_ur3_project/workspace/custom_code/*.bak
+ros2_ur3_project/workspace/custom_code/*.tmp
+
+
+# Alles oben Empfehlungen von ChatGPT, unten meine eigenen
+Befehle 26.08
+general_planner_node.py
+move_tcp_up_ros2.py
+move_tcp_up.py
+Adapterflanch.stl
+SCHUNK-Gripper-Fingers.stl

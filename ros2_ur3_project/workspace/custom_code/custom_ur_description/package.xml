@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>custom_ur_description</name>
+  <version>0.1.0</version>
+  <description>Custom UR description (URDF/Xacro, meshes, config, launch).</description>
+  <maintainer email="you@example.com">Your Name</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- Laufzeit-Abhängigkeiten, nur falls gebraucht -->
+  <exec_depend>xacro</exec_depend>
+  <!-- Falls du UR-Makros/Xacros wiederverwendest: -->
+  <exec_depend>ur_description</exec_depend>
+  <!-- Optional: wenn du direkt robot_state_publisher startest -->
+  <!-- <exec_depend>robot_state_publisher</exec_depend> -->
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
+
