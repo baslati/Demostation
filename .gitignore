@@ -44,10 +44,9 @@ ros2_ur3_project/workspace/custom_code/*.bak
 ros2_ur3_project/workspace/custom_code/*.tmp
 
 
-# Alles oben Empfehlungen von ChatGPT, unten meine eigenen
+# Oben generisch
 Befehle 26.08
 general_planner_node.py
 move_tcp_up_ros2.py
-move_tcp_up.py
 Adapterflanch.stl
 SCHUNK-Gripper-Fingers.stl
