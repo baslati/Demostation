@@ -27,6 +27,18 @@ def generate_launch_description():
     moveit_config_package = LaunchConfiguration('moveit_config_package', default='custom_ur_moveit_config')
     launch_rviz = LaunchConfiguration('launch_rviz', default='true')
 
+
+    # Spawner für die wichtigsten Controller (werden direkt nach Start aktiviert)
+    from launch_ros.actions import Node as RosNode
+    controller_spawners = [
+        RosNode(
+            package='controller_manager',
+            executable='spawner',
+            arguments=['scaled_joint_trajectory_controller', '--controller-manager', '/controller_manager'],
+            output='screen'
+        )
+    ]
+
     return LaunchDescription([
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(moveit_launch),
@@ -44,10 +56,11 @@ def generate_launch_description():
             launch_arguments={
                 'ur_type': ur_type,
                 'robot_ip': robot_ip,
-                'use_fake_hardware': use_fake_hardware
-                    , 'launch_rviz': 'false'
+                'use_fake_hardware': use_fake_hardware,
+                'launch_rviz': 'false'
             }.items()
-        )
+        ),
+        *controller_spawners
     ])
 
 # Hilfsfunktion für ROS2 package share directory
