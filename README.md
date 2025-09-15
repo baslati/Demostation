@@ -69,3 +69,78 @@ docker exec -it DOCKERNAME bash
 cd /workspace/custom_code
 python3 simple_ur_controller.py
 ```
+### Fehlersuche
+
+#### IP ADRESSEN
+IP Roboter: 192.168.122.20
+IP Computer: 192.168.122.100
+
+Anpassung der IP Adressen nötig, so hat es am Seeed J4012 geklappt
+```bash
+sudo ip addr flush dev enP8p1s0
+sudo ip addr add 192.168.122.100/24 dev enP8p1s0
+sudo ip link set enP8p1s0 up
+```
+
+#### Netzwerk-Fehler: can't initialize iptables table 'raw': Table does not exist
+
+**Fehler:**
+- Seeed Jetson Kernel fehlen iptables raw Tabellen-Module
+- Docker versucht Netzwerk-Isolation mit iptables zu aktivieren
+- Build schlägt fehl: can't initialize iptables table 'raw': Table does not exist
+
+**Lösung:**
+- Docker-Daemon-Konfiguration erstellen: `/etc/docker/daemon.json`
+- iptables, userland-proxy und ip-forward deaktivieren
+- Docker-Service neustarten
+- Build funktioniert wieder
+
+**Kommandos:**
+```bash
+sudo tee /etc/docker/daemon.json <<EOF
+{
+  "iptables": false,
+  "userland-proxy": false,
+  "ip-forward": false
+}
+EOF
+sudo systemctl restart docker
+```
+
+**Ursache:**
+- Seeed Jetson hat minimalistische Kernel-Konfiguration ohne vollständige Netfilter-Unterstützung
+
+#### GPU wird nicht genutzt, nur CPU – Docker mit NVIDIA-Runtime konfigurieren
+
+i. Fehler:
+- Docker verwendet standardmäßig die CPU, GPU bleibt ungenutzt
+- ROS2/MoveIt läuft langsam, keine Hardware-Beschleunigung
+
+ii. Lösung:
+- Docker-Daemon-Konfiguration anpassen: `/etc/docker/daemon.json`
+- NVIDIA-Runtime eintragen und Pfad setzen
+- Docker-Service neu starten
+
+iii. Kommandos:
+```bash
+sudo systemctl stop docker
+sudo nano /etc/docker/daemon.json
+# Inhalt:
+{
+  "iptables": false,
+  "userland-proxy": false,
+  "ip-forward": false,
+  "runtimes": {
+    "nvidia": {
+      "path": "/usr/bin/nvidia-container-runtime",
+      "runtimeArgs": []
+    }
+  }
+}
+sudo systemctl restart docker
+```
+
+iv. Ursache:
+- Standardmäßig ist die NVIDIA-Runtime nicht aktiviert
+- Erst nach Anpassung wird die GPU für Docker-Container genutzt
+- Danach läuft alles mit GPU-Unterstützung
