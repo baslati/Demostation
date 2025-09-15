@@ -1,10 +1,8 @@
-
 #!/usr/bin/env python3
 # SimpleURController: Minimaler ROS2-Node für UR-Robotersteuerung mit MoveIt
 # - Fragt die aktuelle Pose ab
 # - Plant und prüft Bewegung zu einer Zielpose
 # - Führt die Bewegung aus, wenn möglich
-
 
 import rclpy
 from rclpy.node import Node
@@ -16,7 +14,6 @@ from trajectory_msgs.msg import JointTrajectory
 from rclpy.action import ActionClient
 from builtin_interfaces.msg import Duration
 import math
-
 
 # Hilfsfunktion: Wandelt Roll-Pitch-Yaw (Eulerwinkel) in Quaternion um
 def rpy_to_quat(roll, pitch, yaw):
@@ -30,6 +27,24 @@ def rpy_to_quat(roll, pitch, yaw):
     q.z = cr * cp * sy - sr * sp * cy
     return q
 
+# Hilfsfunktion zur Umwandlung Quaternion -> RPY
+def quat_to_rpy(q):
+    # ROS-Standard-Konvention (xyz, w)
+    # roll (x-axis rotation)
+    sinr_cosp = 2 * (q.w * q.x + q.y * q.z)
+    cosr_cosp = 1 - 2 * (q.x * q.x + q.y * q.y)
+    roll = math.atan2(sinr_cosp, cosr_cosp)
+    # pitch (y-axis rotation)
+    sinp = 2 * (q.w * q.y - q.z * q.x)
+    if abs(sinp) >= 1:
+        pitch = math.copysign(math.pi / 2, sinp)
+    else:
+        pitch = math.asin(sinp)
+    # yaw (z-axis rotation)
+    siny_cosp = 2 * (q.w * q.z + q.x * q.y)
+    cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
+    yaw = math.atan2(siny_cosp, cosy_cosp)
+    return roll, pitch, yaw
 
 class SimpleURController(Node):
     def __init__(self):
@@ -54,7 +69,6 @@ class SimpleURController(Node):
         if not self.exec_ac.wait_for_server(timeout_sec=10.0):
             raise RuntimeError('Action-Server nicht verfügbar')
 
-
     # Holt den aktuellen Roboterzustand (Joint-Werte etc.)
     def get_robot_state(self):
         req = GetPlanningScene.Request()
@@ -63,7 +77,6 @@ class SimpleURController(Node):
         rclpy.spin_until_future_complete(self, fut)
         res = fut.result()
         return res.scene.robot_state
-
 
     # Fragt die aktuelle Pose des Endeffektors ab (FK-Service)
     def get_current_pose(self):
@@ -77,7 +90,6 @@ class SimpleURController(Node):
         if res.error_code.val != res.error_code.SUCCESS or not res.pose_stamped:
             raise RuntimeError('FK fehlgeschlagen')
         return res.pose_stamped[0]
-
 
     # Plant eine Bewegung zu einer Zielpose (xyz + rpy)
     # Prüft Kollisionen und gibt die geplante Trajektorie zurück
@@ -135,7 +147,6 @@ class SimpleURController(Node):
             raise RuntimeError('Keine Trajektorie gefunden (Kollision?)')
         return jt
 
-
     # Führt die geplante Trajektorie aus (Action-Client)
     def execute_trajectory(self, jt: JointTrajectory):
         goal = FollowJointTrajectory.Goal()
@@ -154,7 +165,6 @@ class SimpleURController(Node):
         print('Bewegung erfolgreich ausgeführt!')
 
 
-
 # Hauptfunktion: Initialisiert ROS2, fragt Pose ab, plant und führt Bewegung aus
 def main():
     rclpy.init()
@@ -169,30 +179,10 @@ def main():
     # 2. Zielpose: 5cm höher in z-Richtung, Orientierung beibehalten
     x = pose.pose.position.x
     y = pose.pose.position.y
-    z = pose.pose.position.z + 0.05  # 5cm nach oben
+    z = pose.pose.position.z - 0.05  # 5cm nach oben
 
     # Orientierung aus aktueller Pose übernehmen (Quaternion -> RPY)
     quat = pose.pose.orientation
-    # Hilfsfunktion zur Umwandlung Quaternion -> RPY
-    def quat_to_rpy(q):
-        # ROS-Standard-Konvention (xyz, w)
-        import math
-        # roll (x-axis rotation)
-        sinr_cosp = 2 * (q.w * q.x + q.y * q.z)
-        cosr_cosp = 1 - 2 * (q.x * q.x + q.y * q.y)
-        roll = math.atan2(sinr_cosp, cosr_cosp)
-        # pitch (y-axis rotation)
-        sinp = 2 * (q.w * q.y - q.z * q.x)
-        if abs(sinp) >= 1:
-            pitch = math.copysign(math.pi / 2, sinp)
-        else:
-            pitch = math.asin(sinp)
-        # yaw (z-axis rotation)
-        siny_cosp = 2 * (q.w * q.z + q.x * q.y)
-        cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
-        yaw = math.atan2(siny_cosp, cosy_cosp)
-        return roll, pitch, yaw
-
     roll, pitch, yaw = quat_to_rpy(quat)
 
     print('Plane Bewegung zu Zielpose (5cm höher, Orientierung bleibt)...')
