@@ -69,7 +69,7 @@ docker exec -it DOCKERNAME bash
 cd /workspace/custom_code
 python3 simple_ur_controller.py
 ```
-### Fehlersuche
+### 5. Fehlersuche
 
 #### IP ADRESSEN
 IP Roboter: 192.168.122.20
