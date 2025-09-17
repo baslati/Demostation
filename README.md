@@ -4,6 +4,10 @@
 
 Dieses Projekt ermöglicht die Planung und Steuerung eines Universal Robots (UR) mit ROS2 und MoveIt. Ziel ist es, über RVIZ oder Python-Skripte die aktuelle Pose des Roboters abzufragen, eine neue Zielpose zu setzen, Kollisionen zu prüfen und die Bewegung auszuführen. Die Steuerung erfolgt direkt über einen Docker-Container.
 
+## Hardware
+
+Dieser Docker wurde angepasst auf einen UR3e und als Steuercomputer kam ein Seeed J4012 mit einem Jetson Orin NX16 und Jetpack 6.1 zum Einsatz. 
+
 ## Funktionen
 
 - **Abfrage der aktuellen Pose**: Python-Skripte fragen die Endeffektor-Position und -Orientierung ab.
