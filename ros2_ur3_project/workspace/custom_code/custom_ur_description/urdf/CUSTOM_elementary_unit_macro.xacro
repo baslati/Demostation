@@ -3,13 +3,15 @@
 
   <!-- Macro: erzeugt eine quadratische Elementareinheit, für die 4 gleichen Platten -->
   <xacro:macro name="elementary_unit" params="
-      prefix
-      parent:=station
-      size:=0.5        
-      height:=0.06
-      pos_on_station:= '0 0'      
-      rgba:='0.0 0.0 0.0 1.0'">
+    prefix
+    parent:=station
+    size_x:=0.5
+    size_y:=0.5
+    height:=0.06
+    pos_on_station:='0 0'
+    rgba:='0.0 0.0 0.0 1.0'">
             
+
       <link name="${prefix}_KOS"/>
         <joint name="${prefix}_to_parent" type="fixed">
           <parent link="${parent}"/>
@@ -20,19 +22,19 @@
       <link name="${prefix}_cube">
         <visual>
           <origin xyz="0 0 0" rpy="0 0 0"/>
-            <geometry><box size="${size} ${size} ${height}"/></geometry>
+            <geometry><box size="${size_x} ${size_y} ${height}"/></geometry>
             <material name="${prefix}_e_mat"><color rgba="${rgba}"/></material>
         </visual>
         <collision>
           <origin xyz="0 0 0" rpy="0 0 0"/>
-          <geometry><box size="${size} ${size} ${height}"/></geometry>
+          <geometry><box size="${size_x} ${size_y} ${height}"/></geometry>
         </collision>
       </link>
        
       <joint name="${prefix}_kos_cube" type="fixed">
-	      <parent link="${prefix}_KOS"/>
-	      <child  link="${prefix}_cube"/>
-	      <origin xyz="${0.5*size} ${0.5*size} ${0.5*height}" rpy="0 0 0"/>
+        <parent link="${prefix}_KOS"/>
+        <child  link="${prefix}_cube"/>
+        <origin xyz="${0.5*size_x} ${0.5*size_y} ${0.5*height}" rpy="0 0 0"/>
       </joint>
 
   </xacro:macro>

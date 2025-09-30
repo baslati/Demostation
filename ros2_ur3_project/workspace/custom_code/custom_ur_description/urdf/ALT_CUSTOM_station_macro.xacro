@@ -25,19 +25,19 @@
 	<link name="station_cube">
 		<visual>
 			<origin xyz="0 0 0" rpy="0 0 0"/>
-			<geometry><box size="0.6 0.9 1"/></geometry>
+			<geometry><box size="${size} ${size} ${height}"/></geometry>
 			<material name="station_mat"><color rgba="${rgba_grey}"/></material>
 		</visual>
 		<collision>
 			<origin xyz="0 0 0" rpy="0 0 0"/>
-			<geometry><box size="0.6 0.9 1"/></geometry>
+			<geometry><box size="${size} ${size} ${height}"/></geometry>
 		</collision>
 	</link>
 		<joint name="station_to_cube" type="fixed">
 			<parent link="station"/>
 			<child  link="station_cube"/>
 			<!-- hebt den Würfel um height/2, sodass seine Unterseite bei station.z=0 liegt -->
-			<origin xyz="${0.5*0.6} ${0.5*0.9} ${-0.5*1}" rpy="0 0 0"/>
+			<origin xyz="${0.5*size} ${0.5*size} ${-0.5*height}" rpy="0 0 0"/>
 	  	</joint>
 
   <!-- Definiert station_top, dort wird der Roboter gemountet -->
@@ -45,32 +45,15 @@
 		<joint name="station_to_top" type="fixed">
 			<parent link="station"/>
 			<child  link="station_top"/>
-			<origin xyz="0.225 0.325 0.02" rpy="0 0 1.5708"/>
-		</joint>
-
-	<!-- Zylinder: Mittelpunkt (0.05, 0.08, 0.02), Höhe 0.9, Durchmesser 0.06 -->
-	<link name="custom_cylinder">
-		<visual>
-			<origin xyz="0 0 0" rpy="0 0 0"/>
-			<geometry><cylinder length="0.9" radius="0.03"/></geometry>
-			<material name="cylinder_mat"><color rgba="0.7 0.7 0.2 1.0"/></material>
-		</visual>
-		<collision>
-			<origin xyz="0 0 0" rpy="0 0 0"/>
-			<geometry><cylinder length="0.9" radius="0.03"/></geometry>
-		</collision>
-	</link>
-		<joint name="station_cube_to_custom_cylinder" type="fixed">
-			<parent link="station_cube"/>
-			<child link="custom_cylinder"/>
-			<!-- Oberseite von station_cube: z=1, Zylinder steht mit Unterseite darauf -->
-			<origin xyz="-0.25 0.40 1.0" rpy="0 0 0"/>
+			<origin xyz="0.25 0.25 0.06" rpy="0 0 1.5708"/>
 		</joint>
 	  
-  <!-- Erstellt 2 Platten auf der Station aus der Macro -->
+  <!-- Erstellt 4 Platten auf der Station aus der Macro -->
 	<xacro:include filename="$(find custom_ur_description)/urdf/CUSTOM_elementary_unit_macro.xacro"/>
-		<xacro:elementary_unit prefix="u1" size_x="0.25" size_y="0.25" height="0.02" pos_on_station="0.1 0.2" rgba="${rgba_black}"/>
-		<xacro:elementary_unit prefix="u4" size_x="0.25" size_y="0.45" height="0.02" pos_on_station="0.35 0.45" rgba="${rgba_blue}"/>
+		<xacro:elementary_unit prefix="u1" pos_on_station="0.0 0.0" rgba="${rgba_black}"/>
+		<xacro:elementary_unit prefix="u2" pos_on_station="0.5 0.0" rgba="${rgba_blue}"/>
+		<xacro:elementary_unit prefix="u3" pos_on_station="0.0 0.5" rgba="${rgba_blue}"/>
+		<xacro:elementary_unit prefix="u4" pos_on_station="0.5 0.5" rgba="${rgba_blue}"/>
 	</xacro:macro>
 
 </robot>
