@@ -50,3 +50,4 @@ general_planner_node.py
 move_tcp_up_ros2.py
 Adapterflanch.stl
 SCHUNK-Gripper-Fingers.stl
+ALT_CUSTOM_station_macro.xacro
