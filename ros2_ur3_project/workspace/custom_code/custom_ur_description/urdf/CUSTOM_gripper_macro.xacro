@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro">
+
+  <!-- Gripper (Co-act EGP-C 40) -->
+  <xacro:macro name="egpc40_gripper" params="parent_link:=adapterflange">
+    <link name="egpc40_gripper">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://custom_ur_description/meshes/CUSTOM_meshes/SCHUNK-Gripper-Fingers.stl"/>
+        </geometry>
+        <material name="blue">
+          <color rgba="0.2 0.2 0.8 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://custom_ur_description/meshes/CUSTOM_meshes/SCHUNK-Gripper-Fingers.stl"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${parent_link}_to_egpc40_gripper" type="fixed">
+      <parent link="${parent_link}"/>
+      <child link="egpc40_gripper"/>
+      <origin xyz="0 0 0.118" rpy="0 0 0"/>
+    </joint>
+  </xacro:macro>
+
+
+    <!-- TCP-Link am Ende des Greifers -->
+  <link name="tcp"/>
+    <joint name="egpc40_gripper_to_tcp" type="fixed">
+        <parent link="egpc40_gripper"/>
+        <child link="tcp"/>
+        <origin xyz="0 0 0.05" rpy="0 0 0"/>
+    </joint>
+
+</robot>

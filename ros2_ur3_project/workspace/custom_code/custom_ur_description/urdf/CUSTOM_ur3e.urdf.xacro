@@ -3,7 +3,8 @@
    <!-- robot name parameter -->
    <xacro:arg name="name" default="ur3"/>
    <!-- import main macro -->
-   <xacro:include filename="$(find custom_ur_description)/urdf/ur_macro.xacro"/>
+  <xacro:include filename="$(find custom_ur_description)/urdf/ur_macro.xacro"/>
+  <xacro:include filename="$(find custom_ur_description)/urdf/CUSTOM_gripper_macro.xacro"/>
 
    <!-- ur_type: ur3 -->
    <xacro:arg name="ur_type" default="ur3"/>
@@ -112,5 +113,10 @@
      >
      <origin xyz="0 0 0" rpy="0 0 3.141" />
    </xacro:ur_robot>
+
+
+  <!-- Adapterflansch und EGP-C 40 Gripper (Makros) 
+  <xacro:ur3e_adapterflange parent_link="tool0"/>-->
+  <xacro:egpc40_gripper parent_link="tool0"/>
 
 </robot>
