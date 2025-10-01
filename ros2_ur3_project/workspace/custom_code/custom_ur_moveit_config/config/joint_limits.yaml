@@ -1,17 +1,11 @@
 joint_limits:
   shoulder_pan_joint:
-    has_position_limits: true
-    min_position: -0.5235   # -130°
-    max_position: 3.665             # 0°
     has_velocity_limits: true
     max_velocity: 1.0
     has_acceleration_limits: true
     max_acceleration: 0.6
 
   shoulder_lift_joint:
-    has_position_limits: true
-    min_position: -2.2689280276   # -130°
-    max_position: 0.0             # 0°
     has_velocity_limits: true
     max_velocity: 1.0
     has_acceleration_limits: true
@@ -55,7 +49,7 @@ default_robot_link_padding:
   shoulder_link: 0.03
   upper_arm_link: 0.03
   forearm_link: 0.03
-  wrist_1_link: 10.0
+  wrist_1_link: 0.02
   wrist_2_link: 0.02
   wrist_3_link: 0.02
   # deine Greifer-/Kamera-Links ergänzen

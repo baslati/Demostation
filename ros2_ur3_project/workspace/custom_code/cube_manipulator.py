@@ -51,7 +51,7 @@ class SimpleURController(Node):
         super().__init__('simple_ur_controller')
         # MoveIt-Gruppen und Link-Namen (ggf. anpassen)
         self.group = 'ur_manipulator'      # Name der MoveIt-Gruppe
-        self.ee_link = 'tool0'             # Endeffektor-Link
+        self.ee_link = 'tcp'             # Endeffektor-Link
         self.base = 'base_link'            # Basis-Link
         self.action_name = '/scaled_joint_trajectory_controller/follow_joint_trajectory' # Action-Server für Ausführung
 
@@ -171,18 +171,20 @@ def main():
     node = SimpleURController()
 
     # Tischfläche definieren (z.B. x/y-Min/Max, z als Tischhöhe)
-    table_x_min = 0.2
-    table_x_max = 0.8
-    table_y_min = -0.3
-    table_y_max = 0.3
-    table_z = 0.05  # Tischhöhe (anpassen!)
-    hover_height = 0.15  # Höhe über Tisch zum Anfahren
-    cube_height = 0.05   # Höhe des Würfels
+    table_x_min = 0.125
+    table_x_max = 0.375
+    table_y_min = 0.125
+    table_y_max = 0.530
+    table_z = 0.00 # Tischhöhe (anpassen!)
+    hover_height = 0.08  # Höhe über Tisch zum Anfahren
+    cube_height = 0.03   # Höhe des Würfels
 
     print('Bitte Startkoordinaten für den Würfel eingeben (x y):')
-    start_x, start_y = map(float, input().split())
+    #start_x, start_y = map(float, input().split())
+    start_x, start_y = -0.2, 0.2  # Beispielwerte
     print('Bitte Zielkoordinaten für den Würfel eingeben (x y):')
-    goal_x, goal_y = map(float, input().split())
+    #goal_x, goal_y = map(float, input().split())
+    goal_x, goal_y = -0.3, 0.2  # Beispielwerte
 
     # Orientierung: Greifer zeigt nach unten (z-Achse)
     roll = math.pi
@@ -210,7 +212,7 @@ def main():
     # TODO: Greifer-Logik einfügen
 
     # 3. Würfel anheben auf feste Ebene
-    move_height = table_z + 0.05  # 5cm über Tisch
+    move_height = table_z + hover_height  # Höhe zum Fahren
     print(f'Hebe Würfel auf {move_height:.2f}m an...')
     jt_lift = node.plan_to_pose(
         x=start_x, y=start_y, z=move_height,

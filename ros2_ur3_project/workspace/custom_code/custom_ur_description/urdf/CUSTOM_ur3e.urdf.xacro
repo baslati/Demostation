@@ -115,8 +115,7 @@
    </xacro:ur_robot>
 
 
-  <!-- Adapterflansch und EGP-C 40 Gripper (Makros) 
-  <xacro:ur3e_adapterflange parent_link="tool0"/>-->
+  <!-- EGP-C 40 Gripper (Makros) -->
   <xacro:egpc40_gripper parent_link="tool0"/>
-
+  
 </robot>
