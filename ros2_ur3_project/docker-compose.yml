@@ -25,3 +25,6 @@ services:
       - "/dev/bus/usb:/dev/bus/usb"
     tty: true
     stdin_open: true
+    ports:
+      - "8000:8000"  
+      - "50022:50022"

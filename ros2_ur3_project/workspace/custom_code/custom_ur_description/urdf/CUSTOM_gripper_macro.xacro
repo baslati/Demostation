@@ -21,9 +21,9 @@
       </collision>
     </link>
     <joint name="${parent_link}_to_egpc40_gripper" type="fixed">
-      <parent link="${parent_link}"/>
-      <child link="egpc40_gripper"/>
-      <origin xyz="0 0 0.118" rpy="0 0 0"/>
+  <parent link="${parent_link}"/>
+  <child link="egpc40_gripper"/>
+  <origin xyz="0 0 0.118" rpy="0 0 -0.7854"/>
     </joint>
   </xacro:macro>
 

@@ -78,11 +78,22 @@ RUN source /opt/ros/humble/setup.bash && \
 	colcon build --symlink-install
 
 # optional: sicherstellen, dass pip aktuell ist
-RUN python3 -m pip install --no-cache-dir --upgrade pip
+RUN python3 -m pip install --no-cache-dir --upgrade pip --index-url https://pypi.org/simple
+
+
 
 # explizit PyPI nutzen (überschreibt evtl. gesetzten PIP_INDEX_URL)
 RUN pip install --no-cache-dir -i https://pypi.org/simple \
     "fastapi==0.112.*" "uvicorn[standard]==0.30.*"
+
+
+# Installiere native RTDE-Bibliothek aus dem sdurobotics Repo (Source Build)
+RUN apt-get update && apt-get install -y git cmake g++ make && \
+    git clone --branch master https://gitlab.com/sdurobotics/ur_rtde.git /tmp/UR_RTDE && \
+    cd /tmp/UR_RTDE && mkdir build && cd build && \
+    cmake .. && make && make install && \
+    ldconfig && \
+    rm -rf /tmp/UR_RTDE && rm -rf /var/lib/apt/lists/*
 
 # Automatisch sourcen bei Shell
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \

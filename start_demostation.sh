@@ -2,14 +2,14 @@
 set -e
 
 # In Projektordner wechseln
-cd /home/parallels/Demostation
+cd /home/orin/Desktop/Demostation
 
 echo "Setze X11 Rechte für Docker..."
 xhost +local:docker
 
 echo "Im Container bitte ausführen:"
 echo "colcon build --symlink-install"
-echo "ros2 launch custom_ur_moveit_config combined_ur3e.launch.py use_fake_hardware:=true"
+echo "ros2 launch custom_ur_moveit_config combined_ur3e.launch.py use_fake_hardware:=false"
 
 echo "Starte Docker Container..."
 docker run --name demostation-ur3 -it --rm --net=host \
