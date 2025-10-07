@@ -6,7 +6,9 @@ import rtde_io
 #Definitionen
 RTDE_FREQUENCY = 50.0
 RTDE_IP = "192.168.122.20"
-RTDE_PORT = 63352
+#RTDE_PORT = 63352
+RTDE_PORT = 50002
+
 
 
 # Initialisierung
