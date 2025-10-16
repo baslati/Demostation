@@ -1,0 +1,69 @@
+cd /home/orin/Desktop/Demostation/orbbec_perception/docker
+docker build -t orbbec-perception .
+
+docker compose up --build
+
+docker exec -it orbbec_perception_demostation bash
+colcon build --symlink-install
+source install/setup.bash
+
+ros2 launch orbbec_camera femto_mega.launch.py
+
+# --- Vollständige Anleitung für den Orbbec-Perception-Docker ---
+
+## 1. Docker-Image bauen
+# Wechsle ins Verzeichnis und baue das Image (dauert ca. 10-15 Min)
+cd /home/orin/Desktop/Demostation/orbbec_perception
+docker build -t orbbec-perception .
+
+## 2. Container starten
+# Starte den Container im Hintergrund (mit GPU-Support für Jetson)
+docker run -d --name orbbec-container --runtime nvidia --network host orbbec-perception
+
+# Oder interaktiv starten:
+docker run -it --rm --runtime nvidia --network host orbbec-perception bash
+
+## 3. Im Container arbeiten
+# Betrete den laufenden Container
+docker exec -it orbbec-container bash
+
+# Workspace sourcen
+source /opt/ros/humble/setup.bash
+source /workspace/install/setup.bash
+
+# Packages bauen (falls Änderungen gemacht wurden)
+colcon build --symlink-install
+
+## 4. Pipeline starten
+# Kamera starten (Orbbec Femto Mega)
+ros2 launch orbbec_camera femto_mega.launch.py
+
+# In einem neuen Terminal: Cube-Detection starten
+ros2 launch cube_detection cube_detection.launch.py
+
+# Oder einzeln:
+ros2 run cube_detection cube_detector.py
+
+## 5. Testen und Debuggen
+# Topics prüfen
+ros2 topic list
+ros2 topic echo /detected_cubes
+
+# RViz starten für Visualisierung
+ros2 run rviz2 rviz2
+
+# TF-Tree prüfen
+ros2 run tf2_tools view_frames.py
+evince frames.pdf  # Öffne PDF mit TF-Tree
+
+## 6. Container stoppen und aufräumen
+docker stop orbbec-container
+docker rm orbbec-container
+docker rmi orbbec-perception  # Optional: Image löschen
+
+## Hinweise:
+- Stelle sicher, dass die Orbbec-Kamera angeschlossen und Udev-Regeln gesetzt sind.
+- Passe TF-Frame-Koordinaten in cube_detector.py an deine Tischfläche an.
+- Bei Fehlern: Logs mit ros2 doctor check oder colcon build --event-handlers console_direct+ prüfen.
+- Für Roboter-Integration: Subscribe /detected_cubes im separaten Roboter-Docker.
+
