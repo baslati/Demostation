@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
-# ROS sourcen
-source /opt/ros/humble/setup.bash
-if [ -f /workspace/install/setup.bash ]; then
-  source /workspace/install/setup.bash
-fi
+# ROS environment is sourced in .bashrc
 
 export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
 

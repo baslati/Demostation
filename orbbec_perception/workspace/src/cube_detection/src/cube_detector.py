@@ -6,6 +6,7 @@ from geometry_msgs.msg import TransformStamped
 from tf2_ros import StaticTransformBroadcaster
 import open3d as o3d
 import numpy as np
+from sklearn.cluster import DBSCAN
 
 class CubeDetector(Node):
     def __init__(self):
@@ -37,50 +38,49 @@ class CubeDetector(Node):
         self.tf_broadcaster.sendTransform(transform)
 
     def point_cloud_callback(self, msg):
-        # Konvertiere PointCloud2 zu Open3D (vereinfacht – nutze ros2_numpy für vollständige Konvertierung)
-        # Hier Dummy: Angenommen, msg.data enthält XYZ-Punkte
-        # Erweitere mit: import ros2_numpy as rnp; points = rnp.point_cloud2.point_cloud2_to_array(msg)
-        points = np.random.rand(1000, 3) * 2  # Dummy-Daten – ersetze mit echter Konvertierung!
-        cloud = o3d.geometry.PointCloud()
-        cloud.points = o3d.utility.Vector3dVector(points)
+        # Vereinfachte Konvertierung: Angenommen XYZ-Daten (erweitere mit ros2_numpy für echte Daten)
+        # Dummy-Daten für Test: Zufällige Punkte
+        points = np.random.rand(1000, 3) * 2  # Ersetze mit echter Konvertierung!
 
-        if cloud.is_empty():
+        if points.size == 0:
             return
 
         # Filter: Entferne Punkte außerhalb Arbeitsbereich (z.B. Höhe)
-        points = np.asarray(cloud.points)
         valid = (points[:, 2] > 0.1) & (points[:, 2] < 1.0)
-        cloud = cloud.select_by_index(np.where(valid)[0])
+        points = points[valid]
 
-        # Tisch-Segmentierung (RANSAC für Ebene)
-        plane_model, inliers = cloud.segment_plane(distance_threshold=0.01,
-                                                   ransac_n=3,
-                                                   num_iterations=1000)
-        outlier_cloud = cloud.select_by_index(inliers, invert=True)  # Objekte
+        # Tisch-Segmentierung (vereinfacht: Annahme, Tisch ist bei z=0)
+        # Erweitere mit RANSAC für echte Ebene-Erkennung
+        table_z = 0.0  # Dummy: Tisch bei z=0
+        object_points = points[points[:, 2] > table_z + 0.01]  # Punkte über Tisch
 
-        # Clustering für Würfel (DBSCAN)
-        labels = np.array(outlier_cloud.cluster_dbscan(eps=0.02, min_points=10))
-        max_label = labels.max() if len(labels) > 0 else -1
+        # Clustering mit DBSCAN
+        if object_points.shape[0] > 10:
+            clustering = DBSCAN(eps=0.05, min_samples=10).fit(object_points)
+            labels = clustering.labels_
+            unique_labels = set(labels)
+            if -1 in unique_labels:
+                unique_labels.remove(-1)  # Rauschen ignorieren
+        else:
+            unique_labels = set()
 
         # Veröffentliche Detections
         detections = Detection3DArray()
         detections.header = msg.header
         detections.header.frame_id = 'table_frame'
 
-        for i in range(max_label + 1):
-            cluster_indices = np.where(labels == i)[0]
-            if len(cluster_indices) < 100:  # Min-Cluster-Größe
+        for label in unique_labels:
+            cluster_points = object_points[labels == label]
+            if cluster_points.shape[0] < 50:  # Min-Größe
                 continue
-            cluster_cloud = outlier_cloud.select_by_index(cluster_indices)
 
             # Centroid
-            centroid = np.mean(np.asarray(cluster_cloud.points), axis=0)
+            centroid = np.mean(cluster_points, axis=0)
 
-            # Ausrichtung (vereinfacht – PCA mit Open3D)
-            # Für Würfel: Annahme quaderförmig
-            orientation = [0.0, 0.0, 0.0, 1.0]  # Quaternion (anpassen)
+            # Ausrichtung (vereinfacht – erweitere mit PCA)
+            orientation = [0.0, 0.0, 0.0, 1.0]  # Dummy
 
-            # Farbe: Dummy (erweitere mit RGB-Bild)
+            # Farbe: Dummy
             detection = Detection3D()
             detection.header = msg.header
             detection.bbox.center.position.x = float(centroid[0])

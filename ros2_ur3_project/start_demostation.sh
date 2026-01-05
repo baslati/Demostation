@@ -20,4 +20,5 @@ docker run --name demostation-ur3 -it --rm --net=host \
   --volume="$HOME/.Xauthority:/root/.Xauthority:rw" \
   --volume="$PWD/ros2_ur3_project/workspace/custom_code:/workspace/custom_code" \
   --privileged \
+  --runtime=nvidia \
   ur3-ros2

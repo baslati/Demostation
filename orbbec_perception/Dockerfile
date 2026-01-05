@@ -127,10 +127,11 @@ RUN python3 -m pip install --no-cache-dir --upgrade pip --index-url https://pypi
     pip install --no-cache-dir -i https://pypi.org/simple "fastapi==0.112.*" "uvicorn[standard]==0.30.*"
 
 # --- Open3D separat installieren (wegen Abhängigkeitskonflikten) ---
-RUN pip install --ignore-installed open3d
+#RUN pip install open3d
 
 # --- Auto-Source bei Container-Start ---
-RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
+RUN echo "unset AMENT_TRACE_SETUP_FILES" >> /root/.bashrc && \
+    echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
     echo "[ -f /workspace/install/setup.bash ] && source /workspace/install/setup.bash" >> /root/.bashrc
 
 # --- Orbbec Udev-Rules (optional aber empfehlenswert) ---

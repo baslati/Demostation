@@ -67,3 +67,52 @@ docker rmi orbbec-perception  # Optional: Image löschen
 - Bei Fehlern: Logs mit ros2 doctor check oder colcon build --event-handlers console_direct+ prüfen.
 - Für Roboter-Integration: Subscribe /detected_cubes im separaten Roboter-Docker.
 
+
+
+
+#### GPU wird nicht genutzt, nur CPU – Docker mit NVIDIA-Runtime konfigurieren
+
+i. Fehler:
+- Docker verwendet standardmäßig die CPU, GPU bleibt ungenutzt
+- ROS2/MoveIt läuft langsam, keine Hardware-Beschleunigung
+
+ii. Lösung:
+- Docker-Daemon-Konfiguration anpassen: `/etc/docker/daemon.json`
+- NVIDIA-Runtime eintragen und Pfad setzen
+- Docker-Service neu starten
+
+iii. Kommandos:
+```bash
+sudo systemctl stop docker
+sudo nano /etc/docker/daemon.json
+# Inhalt:
+{
+  "iptables": false,
+  "userland-proxy": false,
+  "ip-forward": false,
+  "runtimes": {
+    "nvidia": {
+      "path": "/usr/bin/nvidia-container-runtime",
+      "runtimeArgs": []
+    }
+  }
+}
+sudo systemctl restart docker
+```
+
+
+
+=>
+[17/21] RUN pip install --ignore-installed opend
+390.8s
+→ => # WARNING: Retrying (Retry(total=2, connect=None, read=Non → = # e, redirect=None, status=None)) after connection broken
+=>=>
+# by 'ConnectTimeoutError (<pip._vendor.urllib3. connection.
+=>
+=＞
+# HTTPSConnedtion object at 0xffffa9e8e530>, 'Connection t
+=>
+=>
+→ # o pypt.jetson-ai-lab.dev timed out. (connect timeout=100
+=> =>
+# 0)')': /jp6/cu122/open3d/
