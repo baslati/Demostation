@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  d415_rviz:
+    build: .
+    runtime: nvidia
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /dev:/dev
+    network_mode: host
+    privileged: true
+    command: bash
