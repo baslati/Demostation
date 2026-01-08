@@ -1,0 +1,54 @@
+colcon_ws/build/
+colcon_ws/install/
+colcon_ws/log/
+
+# Ignore build artifacts
+build/
+install/
+log/
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore Docker-related files
+*.tar
+*.bak
+*.swp
+
+# Ignore temporary files
+*.tmp
+*.temp
+*.log
+.DS_Store
+
+# Ignore ROS2 workspace files
+colcon_ws/build/
+colcon_ws/install/
+colcon_ws/log/
+
+# Ignore editor-specific files
+.vscode/
+.idea/
+*.code-workspace
+
+# Ignore other unnecessary files
+*.bak
+*.old
+*.orig
+*.rej
+*.~
+*.swp
+*.swo
+*.tmp
+*.temp
+*.log
+*.DS_Store
+*.~
+*.swp
+*.swo
+*.tmp
+*.temp
+*.log
+*.DS_Store

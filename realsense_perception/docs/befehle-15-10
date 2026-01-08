@@ -1,0 +1,131 @@
+# --- Vollständige Anleitung für den Realsense-Perception-Docker ---
+
+## 1. Docker-Image bauen
+Wechsle ins Verzeichnis und baue das Image (dauert ca. 10-15 Min):
+```bash
+cd /home/orin/Desktop/Demostation/realsense_perception
+docker build --network host -t realsense-perception .
+```
+
+## 2. Container starten
+Starte den Container im Hintergrund (mit GPU-Support für Jetson):
+```bash
+docker run -d --name realsense-container --runtime nvidia --network host \
+  --env="DISPLAY=$DISPLAY" \
+  --env="LIBGL_ALWAYS_SOFTWARE=1" \
+  --env="MESA_GL_VERSION_OVERRIDE=3.3" \
+  --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
+  --volume="$HOME/.Xauthority:/root/.Xauthority:rw" \
+  --volume="$PWD/workspace/custom_code:/workspace/custom_code" \
+  --privileged \
+  realsense-perception
+```
+
+Oder interaktiv starten:
+```bash
+docker run -it --rm --runtime nvidia --network host \
+  --env="DISPLAY=$DISPLAY" \
+  --env="LIBGL_ALWAYS_SOFTWARE=1" \
+  --env="MESA_GL_VERSION_OVERRIDE=3.3" \
+  --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
+  --volume="$HOME/.Xauthority:/root/.Xauthority:rw" \
+  --volume="$PWD/workspace/custom_code:/workspace/custom_code" \
+  --privileged \
+  realsense-perception bash
+```
+
+## 3. Im Container arbeiten
+Betrete den laufenden Container:
+```bash
+docker exec -it realsense-container bash
+```
+
+Workspace sourcen:
+```bash
+source /opt/ros/humble/setup.bash
+source /workspace/install/setup.bash
+```
+
+Packages bauen (falls Änderungen gemacht wurden):
+```bash
+colcon build --symlink-install
+```
+
+## 4. Pipeline starten
+Kamera starten (Realsense D415C):
+```bash
+ros2 launch realsense2_camera rs_launch.py enable_color:=true enable_depth:=true enable_pointcloud:=true publish_tf:=true
+```
+
+In einem neuen Terminal: Cube-Detection starten:
+```bash
+ros2 launch cube_detection cube_detection.launch.py
+```
+
+Oder einzeln:
+```bash
+ros2 run cube_detection cube_detector.py
+```
+
+## 5. Testen und Debuggen
+Topics prüfen:
+```bash
+ros2 topic list
+ros2 topic echo /detected_cubes
+```
+
+RViz starten für Visualisierung:
+```bash
+ros2 run rviz2 rviz2
+```
+
+TF-Tree prüfen:
+```bash
+ros2 run tf2_tools view_frames.py
+evince frames.pdf  # Öffne PDF mit TF-Tree
+```
+
+## 6. Container stoppen und aufräumen
+```bash
+docker stop realsense-container
+docker rm realsense-container
+docker rmi realsense-perception  # Optional: Image löschen
+```
+
+## Hinweise:
+- Stelle sicher, dass die Realsense-Kamera angeschlossen und Udev-Regeln gesetzt sind.
+- Passe TF-Frame-Koordinaten in cube_detector.py an deine Tischfläche an.
+- Bei Fehlern: Logs mit ros2 doctor check oder colcon build --event-handlers console_direct+ prüfen.
+- Für Roboter-Integration: Subscribe /detected_cubes im separaten Roboter-Docker.
+
+---
+
+#### GPU wird nicht genutzt, nur CPU – Docker mit NVIDIA-Runtime konfigurieren
+
+i. Fehler:
+- Docker verwendet standardmäßig die CPU, GPU bleibt ungenutzt
+- ROS2/MoveIt läuft langsam, keine Hardware-Beschleunigung
+
+ii. Lösung:
+- Docker-Daemon-Konfiguration anpassen: `/etc/docker/daemon.json`
+- NVIDIA-Runtime eintragen und Pfad setzen
+- Docker-Service neu starten
+
+iii. Kommandos:
+```bash
+sudo systemctl stop docker
+sudo nano /etc/docker/daemon.json
+# Inhalt:
+{
+  "iptables": false,
+  "userland-proxy": false,
+  "ip-forward": false,
+  "runtimes": {
+    "nvidia": {
+      "path": "/usr/bin/nvidia-container-runtime",
+      "runtimeArgs": []
+    }
+  }
+}
+sudo systemctl restart docker
+```

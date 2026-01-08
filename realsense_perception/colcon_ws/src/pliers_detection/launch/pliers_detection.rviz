@@ -1,0 +1,131 @@
+BackgroundColor: {a: 1.0, b: 0.0, g: 0.0, r: 0.0}
+Camera:
+  Distance: 2.0
+  Fixed Frame: camera_link
+  Name: ''
+  Pitch: 0.0
+  Target:
+    X: 0.0
+    Y: 0.0
+    Z: 0.0
+  View Controller Type: orbit
+  Yaw: 0.0
+Displays:
+  - Alpha: 1.0
+    Cell Size: 1.0
+    Class: rviz_default_plugins/Grid
+    Color: {a: 0.5, b: 0.5, g: 0.5, r: 0.5}
+    Enabled: true
+    Line Style:
+      Line Width: 0.03
+      Value: Lines
+    Name: Grid
+    Normal Cell Count: 0
+    Offset:
+      X: 0.0
+      Y: 0.0
+      Z: 0.0
+    Plane: XY
+    Plane Cell Count: 10
+    Reference Frame: <Fixed Frame>
+    Value: true
+  - Alpha: 1.0
+    Autocompute Intensity Bounds: true
+    Autocompute Value Bounds:
+      Max Value: 10.0
+      Min Value: -10.0
+      Value: true
+    Axis: Z
+    Channel Name: intensity
+    Class: rviz_default_plugins/PointCloud2
+    Color: {a: 1.0, b: 1.0, g: 1.0, r: 1.0}
+    Color Transformer: XYZ
+    Decay Time: 0.0
+    Enabled: true
+    Invert Rainbow: false
+    Max Color: {a: 1.0, b: 1.0, g: 1.0, r: 1.0}
+    Min Color: {a: 1.0, b: 0.0, g: 0.0, r: 0.0}
+    Name: PointCloud2
+    Position Transformer: XYZ
+    Queue Size: 10
+    Selectable: true
+    Size (Pixels): 3
+    Size (m): 0.01
+    Style: Points
+    Topic: /camera/points
+    Unreliable: false
+    Use Fixed Frame: true
+    Use rainbow: true
+    Value: true
+  - Class: rviz_default_plugins/Detection3DArray
+    Enabled: true
+    Name: Detections
+    Queue Size: 10
+    Topic: /detected_pliers
+    Value: true
+  - Class: rviz_default_plugins/MarkerArray
+    Enabled: true
+    Name: Markers
+    Queue Size: 10
+    Topic: /pliers_markers
+    Value: true
+  - Class: rviz_default_plugins/Image
+    Enabled: true
+    Name: RGB Image
+    Queue Size: 10
+    Topic: /camera/color/image_raw
+    Value: true
+  - Class: rviz_default_plugins/Image
+    Enabled: true
+    Name: Overlay Image
+    Queue Size: 10
+    Topic: /camera/color/image_overlay
+    Value: true
+Enabled: true
+Global Options:
+  Background Color: {a: 1.0, b: 0.0, g: 0.0, r: 0.0}
+  Fixed Frame: camera_link
+  Frame Rate: 30.0
+Name: pliers_detection
+Tools:
+  - Class: rviz_default_plugins/Interact
+    Hide Inactive Objects: true
+  - Class: rviz_default_plugins/MoveCamera
+  - Class: rviz_default_plugins/Select
+  - Class: rviz_default_plugins/FocusCamera
+  - Class: rviz_default_plugins/Measure
+Value: true
+Visualization Manager:
+  Class: ''
+  Global Options:
+    Background Color: {a: 1.0, b: 0.0, g: 0.0, r: 0.0}
+    Fixed Frame: camera_link
+    Frame Rate: 30.0
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 2.0
+      Focal Point:
+        X: 0.0
+        Y: 0.0
+        Z: 0.0
+      Name: Current View
+      Pitch: 0.0
+      Value: Orbit (rviz)
+      Yaw: 0.0
+    Saved: ~
+  Window Geometry:
+    Height: 800
+    Hidden: false
+    Width: 1200
+    X: 0
+    Y: 0

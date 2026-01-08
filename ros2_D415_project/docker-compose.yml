@@ -1,0 +1,24 @@
+version: '3.8'
+services:
+  realsense-perception:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: realsense-perception
+    container_name: realsense_perception_demostation
+    network_mode: host
+    environment:
+      - DISPLAY=${DISPLAY}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:rw
+      # Angepasst: Lokaler Code in Unterordner mounten, um System-Dependencies zu erhalten
+      - ./workspace/src:/workspace/src/user_code
+    privileged: true
+    devices:
+      - "/dev/bus/usb:/dev/bus/usb"
+    tty: true
+    stdin_open: true
