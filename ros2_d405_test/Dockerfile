@@ -56,7 +56,12 @@ RUN apt-get -o Acquire::ForceIPv4=true update && apt-get -o Acquire::ForceIPv4=t
     ros-humble-tf2 \
     ros-humble-tf2-ros \
     ros-humble-tf2-eigen \
+    ros-humble-vision-msgs \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
+
+# 4.2) Python Libraries
+RUN pip3 install --no-cache-dir ultralytics
 
 # 5) ROSWorkspace einrichten
 WORKDIR /workspace

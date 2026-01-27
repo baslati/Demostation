@@ -22,7 +22,7 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/.Xauthority:/root/.Xauthority:rw
-      - ./workspace/src/custom_code:/workspace/src/custom_code
+      - ./workspace/src:/workspace/src
     privileged: true
     devices:
       - "/dev/bus/usb:/dev/bus/usb"
