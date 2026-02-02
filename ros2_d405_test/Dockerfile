@@ -61,7 +61,7 @@ RUN apt-get -o Acquire::ForceIPv4=true update && apt-get -o Acquire::ForceIPv4=t
     && rm -rf /var/lib/apt/lists/*
 
 # 4.2) Python Libraries
-RUN pip3 install --no-cache-dir ultralytics
+RUN pip3 install --no-cache-dir ultralytics --index-url https://pypi.org/simple
 
 # 5) ROSWorkspace einrichten
 WORKDIR /workspace

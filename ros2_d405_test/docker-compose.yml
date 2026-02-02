@@ -22,7 +22,8 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/.Xauthority:/root/.Xauthority:rw
-      - ./workspace/src:/workspace/src
+      - ./workspace/src/custom_code:/workspace/src/custom_code
+      - ./workspace/src/pliers_detection:/workspace/src/pliers_detection
     privileged: true
     devices:
       - "/dev/bus/usb:/dev/bus/usb"
