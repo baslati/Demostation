@@ -19,6 +19,7 @@ RUN printf 'Package: libopencv*\nPin: release *\nPin-Priority: -1\n' > /etc/apt/
 # 3) Abhängigkeiten installieren
 RUN apt-get -o Acquire::ForceIPv4=true update && apt-get -o Acquire::ForceIPv4=true install -y --no-install-recommends \
     ros-humble-rviz2 \
+    ros-humble-rqt* \
     ros-humble-rosidl-default-generators \
     ros-humble-diagnostic-updater \
     ros-humble-xacro \
@@ -48,6 +49,8 @@ RUN apt-get -o Acquire::ForceIPv4=true update && apt-get -o Acquire::ForceIPv4=t
     ros-humble-ament-lint-auto \
     ros-humble-ament-lint-common \
     ros-humble-ament-cmake-cppcheck \
+    python3-pip \
+    && pip3 install ultralytics
     ros-humble-ros-base \
     ros-humble-std-srvs \
     ros-humble-image-transport \

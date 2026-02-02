@@ -30,3 +30,22 @@ Dieses Verzeichnis enthält eine Docker-Umgebung, um die Realsense D405 Kamera a
    ```bash
    rviz2
    ```
+
+4. **Zangen-Erkennung mit YOLO starten**:
+   Nach dem Starten des Containers und Sourcen der Umgebung:
+   ```bash
+   colcon build --symlink-install
+   source install/setup.bash
+   ros2 launch pliers_yolo_detection pliers_yolo.launch.py
+   ```
+   - **Video-Feed anzeigen**: In einem separaten Terminal (via `docker exec -it d405_test_container bash`):
+     ```bash
+     rqt
+     ```
+     Dann in rqt: Plugins > Visualization > Image View, und das Topic `/pliers/debug_image` auswählen.
+   - **3D-Visualisierung**: In einem separaten Terminal:
+     ```bash
+     rviz2
+     ```
+     Füge einen Marker hinzu (Add > Marker) und wähle das Topic `/pliers/markers`.
+   - **Anpassungen**: Parameter wie `yolo_model` (z.B. 'yolov8n.pt') oder `target_class_id` (76 für Scheren/Zangen) können im Launch-File geändert werden.
