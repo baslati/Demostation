@@ -24,3 +24,7 @@ fi
 
 echo "Container gestartet. Gebe Shell frei..."
 docker exec -it d405_test_container bash
+
+# Container nach dem Verlassen der Shell stoppen und löschen
+echo "Stoppe und lösche Container..."
+docker compose down

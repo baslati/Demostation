@@ -51,12 +51,14 @@ class PliersYoloNode(Node):
             self.get_logger().info('Camera Intrinsics received.')
 
     def depth_callback(self, msg):
+        self.get_logger().info('Depth msg received', throttle_duration_sec=5.0)
         try:
             self.latest_depth = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
         except Exception as e:
             self.get_logger().error(f'Depth callback error: {e}')
 
     def color_callback(self, msg):
+        self.get_logger().info('Color msg received', throttle_duration_sec=5.0)
         try:
             self.latest_color = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
             self.process_frame()
@@ -65,6 +67,12 @@ class PliersYoloNode(Node):
 
     def process_frame(self):
         if self.latest_color is None or self.latest_depth is None or self.camera_intrinsics is None:
+            self.get_logger().warn(
+                f'Missing data! Color: {self.latest_color is not None}, '
+                f'Depth: {self.latest_depth is not None}, '
+                f'Intrinsics: {self.camera_intrinsics is not None}',
+                throttle_duration_sec=2.0
+            )
             return
 
         # Run YOLO
