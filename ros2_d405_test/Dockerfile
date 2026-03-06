@@ -60,8 +60,22 @@ RUN apt-get -o Acquire::ForceIPv4=true update && apt-get -o Acquire::ForceIPv4=t
     ros-humble-tf2-eigen \
     && rm -rf /var/lib/apt/lists/*
 
+# 4.2) Vision & Point Cloud Tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-pcl-ros \
+    ros-humble-pcl-conversions \
+    ros-humble-tf-transformations \
+    python3-scipy \
+    && rm -rf /var/lib/apt/lists/*
+
+# Open3D für die ARM64 Architektur des Jetson
+RUN pip3 install --index-url https://pypi.org/simple --ignore-installed open3d
+
 # Install ultralytics with standard PyPI
 RUN pip3 install --index-url https://pypi.org/simple ultralytics
+
+# Upgrade setuptools to fix build issues
+RUN pip3 install --upgrade setuptools
 
 # 5) ROSWorkspace einrichten
 WORKDIR /workspace
@@ -71,7 +85,9 @@ RUN mkdir -p /workspace/src && \
 
 # 6) Workspace bauen
 RUN source /opt/ros/humble/setup.bash && \
-    colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+    colcon build --symlink-install \
+    --packages-ignore realsense2_ros_mqtt_bridge opencv_tests \
+    --cmake-args -DCMAKE_BUILD_TYPE=Release
 
 # 7) Environment Setup
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
