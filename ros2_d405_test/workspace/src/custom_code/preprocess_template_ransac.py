@@ -187,12 +187,12 @@ Beispiele:
     )
     parser.add_argument("input", help="Pfad zur rohen .pcd Datei")
     parser.add_argument("-o", "--output", help="Ausgabepfad (Standard: templates/<name>_clean.pcd)")
-    parser.add_argument("--ransac-threshold", type=float, default=0.005,
-                        help="RANSAC Distanz-Schwellwert in Metern (Standard: 0.005 = 5mm)")
+    parser.add_argument("--ransac-threshold", type=float, default=0.004,
+                        help="RANSAC Distanz-Schwellwert in Metern (Standard: 0.004 = 4mm)")
     parser.add_argument("--ransac-iterations", type=int, default=1000,
                         help="RANSAC Iterationen (Standard: 1000)")
-    parser.add_argument("--cluster-eps", type=float, default=0.005,
-                        help="Max Abstand zwischen Punkten im Cluster in Metern (Standard: 0.005)")
+    parser.add_argument("--cluster-eps", type=float, default=0.010,
+                        help="Max Abstand zwischen Punkten im Cluster in Metern (Standard: 0.010 = 10mm)")
     parser.add_argument("--cluster-min-points", type=int, default=100,
                         help="Min. Punkte pro Cluster (Standard: 100)")
     parser.add_argument("--no-cluster", action="store_true",
