@@ -74,6 +74,9 @@ RUN pip3 install --index-url https://pypi.org/simple --ignore-installed open3d
 # Install ultralytics with standard PyPI
 RUN pip3 install --index-url https://pypi.org/simple ultralytics
 
+# Keep NumPy 1.x for OpenCV ABI compatibility
+RUN pip3 install --index-url https://pypi.org/simple --no-cache-dir --force-reinstall "numpy<2"
+
 # Upgrade setuptools to fix build issues
 RUN pip3 install --upgrade setuptools
 
