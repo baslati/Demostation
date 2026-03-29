@@ -26,7 +26,7 @@ class ArucoTfNode(Node):
 
         self.declare_parameter("image_topic", "/camera/camera/color/image_raw")
         self.declare_parameter("camera_info_topic", "/camera/camera/color/camera_info")
-        self.declare_parameter("marker_size", 0.04)
+        self.declare_parameter("marker_size", 0.05)
         self.declare_parameter("dictionary", "DICT_4X4_50")
         self.declare_parameter("frame_prefix", "aruco_")
 
