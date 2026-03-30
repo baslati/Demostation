@@ -215,3 +215,62 @@ python3 /workspace/src/custom_packages/custom_code/preprocess_template_ransac.py
   --cluster-eps 0.015 \
   --voxel-size 0.002 \
   --normals --preview
+
+
+  [INFO] [1774883207.729002161] [rviz]: Message Filter dropping message: frame 'camera_depth_optical_frame' at time 1774883206.051 for reason 'discarding message because the queue is full'
+
+
+  ros2 launch realsense2_camera rs_launch.py
+pointcloud.enable:=true
+align_depth.enable:=true
+depth_module.depth_profile:=640x480x15
+rgb_camera.color_profile:=640x480x15
+
+root@demojetson:/workspace#  ros2 launch realsense2_camera rs_launch.py
+pointcloud.enable:=true
+align_depth.enable:=true
+depth_module.depth_profile:=640x480x15
+rgb_camera.color_profile:=640x480x15
+[INFO] [launch]: All log files can be found below /root/.ros/log/2026-03-30-15-11-17-887265-demojetson-12904
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [launch.user]: 🚀 Launching as Normal ROS Node
+[INFO] [realsense2_camera_node-1]: process started with pid [12905]
+[realsense2_camera_node-1] [INFO] [1774883478.054086193] [camera.camera]: RealSense ROS v4.57.0
+[realsense2_camera_node-1] [INFO] [1774883478.054341467] [camera.camera]: Built with LibRealSense v2.57.6
+[realsense2_camera_node-1] [INFO] [1774883478.054371965] [camera.camera]: Running with LibRealSense v2.57.6
+[realsense2_camera_node-1]  30/03 15:11:18,063 ERROR [281472082569440] (context.cpp:41) No valid configuration file found at : /root/.realsense-config.json loading defaults
+[realsense2_camera_node-1] [INFO] [1774883478.302915304] [camera.camera]: Device with serial number 409122274780 was found.
+[realsense2_camera_node-1] 
+[realsense2_camera_node-1] [INFO] [1774883478.303165010] [camera.camera]: Device with physical ID /sys/devices/platform/bus@0/3610000.usb/usb2/2-1/2-1.2/2-1.2:1.0/video4linux/video0 was found.
+[realsense2_camera_node-1] [INFO] [1774883478.303202260] [camera.camera]: Device with name Intel RealSense D405 was found.
+[realsense2_camera_node-1] [INFO] [1774883478.303497503] [camera.camera]: Device with port number 2-1.2 was found.
+[realsense2_camera_node-1] [INFO] [1774883478.303531585] [camera.camera]: Device USB type: 3.2
+[realsense2_camera_node-1] [INFO] [1774883478.303666150] [camera.camera]: getParameters...
+[realsense2_camera_node-1] [INFO] [1774883478.304613612] [camera.camera]: JSON file is not provided
+[realsense2_camera_node-1] [INFO] [1774883478.304674350] [camera.camera]: Device Name: Intel RealSense D405
+[realsense2_camera_node-1] [INFO] [1774883478.304695279] [camera.camera]: Device Serial No: 409122274780
+[realsense2_camera_node-1] [INFO] [1774883478.304712591] [camera.camera]: Device physical port: /sys/devices/platform/bus@0/3610000.usb/usb2/2-1/2-1.2/2-1.2:1.0/video4linux/video0
+[realsense2_camera_node-1] [INFO] [1774883478.304730448] [camera.camera]: Device FW version: 5.15.1.55
+[realsense2_camera_node-1] [INFO] [1774883478.304744273] [camera.camera]: Device Product ID: 0x0B5B
+[realsense2_camera_node-1] [INFO] [1774883478.304757745] [camera.camera]: Sync Mode: Off
+[realsense2_camera_node-1] [WARN] [1774883478.404697796] [camera.camera]: Could not set param: depth_module.power_line_frequency with 3 Range: [0, 2]: parameter 'depth_module.power_line_frequency' could not be set: Parameter {depth_module.power_line_frequency} doesn't comply with integer range.
+[realsense2_camera_node-1] [INFO] [1774883478.443989143] [camera.camera]: Set ROS param depth_module.depth_profile to default: 848x480x30
+[realsense2_camera_node-1] [INFO] [1774883478.444974206] [camera.camera]: Set ROS param depth_module.color_profile to default: 848x480x30
+[realsense2_camera_node-1] [INFO] [1774883478.445746909] [camera.camera]: Set ROS param depth_module.infra_profile to default: 848x480x30
+[realsense2_camera_node-1] [INFO] [1774883478.467308914] [camera.camera]: Stopping Sensor: Depth Module
+[realsense2_camera_node-1] [INFO] [1774883478.482117180] [camera.camera]: Starting Sensor: Depth Module
+[realsense2_camera_node-1] [INFO] [1774883478.507246174] [camera.camera]: Open profile: stream_type: Color(0), Format: RGB8, Width: 848, Height: 480, FPS: 30
+[realsense2_camera_node-1] [INFO] [1774883478.507411269] [camera.camera]: Open profile: stream_type: Depth(0), Format: Z16, Width: 848, Height: 480, FPS: 30
+[realsense2_camera_node-1] [INFO] [1774883478.516340038] [camera.camera]: RealSense Node Is Up!
+
+
+
+ros2 launch realsense2_camera rs_launch.py pointcloud.enable:=true align_depth.enable:=true depth_module.depth_profile:=848x480x15 rgb_camera.color_profile:=848x480x15
+
+
+
+ros2 launch realsense2_camera rs_launch.py pointcloud.enable:=true align_depth.enable:=true enable_sync:=true
+
+rviz2 -d /workspace/src/custom_code/rviz_config.rviz
+
+python3 /workspace/src/custom_packages/custom_code/template_matching_roi_icp_node.py
