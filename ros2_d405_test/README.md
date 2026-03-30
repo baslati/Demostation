@@ -271,6 +271,36 @@ ros2 launch realsense2_camera rs_launch.py pointcloud.enable:=true align_depth.e
 
 ros2 launch realsense2_camera rs_launch.py pointcloud.enable:=true align_depth.enable:=true enable_sync:=true
 
-rviz2 -d /workspace/src/custom_code/rviz_config.rviz
+rviz2 -d /workspace/src/custom_packages/custom_code/config.rviz
 
-python3 /workspace/src/custom_packages/custom_code/template_matching_roi_icp_node.py
+
+
+
+move_group-1] [INFO] [1774889279.722368907] [moveit_move_group_default_capabilities.cartersian_path_service_capability]: Received request to compute Cartesian path
+[move_group-1] [INFO] [1774889279.722575059] [moveit_move_group_default_capabilities.cartersian_path_service_capability]: Attempting to follow 1 waypoints for link 'tcp' using a step of 0.010000 m and jump threshold 0.000000 (in global reference frame)
+[move_group-1] [INFO] [1774889279.730669542] [moveit_move_group_default_capabilities.cartersian_path_service_capability]: Computed Cartesian path with 18 points (followed 100.000000% of requested trajectory)
+[rviz2-2] [INFO] [1774889279.731113271] [moveit_ros_visualization.motion_planning_frame_planning]: Achieved 100.000000 % of Cartesian path
+[rviz2-2] [INFO] [1774889279.736787630] [moveit_ros_visualization.motion_planning_frame_planning]: Computing time stamps SUCCEEDED
+[move_group-1] [INFO] [1774889280.179015201] [moveit_move_group_default_capabilities.execute_trajectory_action_capability]: Received goal request
+[move_group-1] [INFO] [1774889280.179227593] [moveit_move_group_default_capabilities.execute_trajectory_action_capability]: Execution request received
+[move_group-1] [INFO] [1774889280.179286955] [moveit.plugins.moveit_simple_controller_manager]: Returned 2 controllers in list
+[move_group-1] [INFO] [1774889280.179317484] [moveit.plugins.moveit_simple_controller_manager]: Returned 2 controllers in list
+[move_group-1] [INFO] [1774889280.179420432] [moveit_ros.trajectory_execution_manager]: Validating trajectory with allowed_start_tolerance 0.01
+[rviz2-2] [INFO] [1774889280.179345998] [move_group_interface]: Execute request accepted
+[move_group-1] [INFO] [1774889280.182054356] [moveit_ros.trajectory_execution_manager]: Starting trajectory execution ...
+[move_group-1] [INFO] [1774889280.183094300] [moveit.plugins.moveit_simple_controller_manager]: Returned 2 controllers in list
+[move_group-1] [INFO] [1774889280.183133437] [moveit.plugins.moveit_simple_controller_manager]: Returned 2 controllers in list
+[move_group-1] [INFO] [1774889280.183489803] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: sending trajectory to scaled_joint_trajectory_controller
+[ur_ros2_control_node-4] [INFO] [1774889280.184431406] [scaled_joint_trajectory_controller]: Received new action goal
+[ur_ros2_control_node-4] [INFO] [1774889280.184522802] [scaled_joint_trajectory_controller]: Accepted new action goal
+[move_group-1] [INFO] [1774889280.184711225] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: scaled_joint_trajectory_controller started execution
+[move_group-1] [INFO] [1774889280.184744570] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Goal request accepted!
+[ur_ros2_control_node-4] [ERROR] [1774889280.185841284] [tolerances]: State tolerances failed for joint 5:
+[ur_ros2_control_node-4] [ERROR] [1774889280.185885989] [tolerances]: Position Error: -12.566402, Position Tolerance: 0.200000
+[ur_ros2_control_node-4] [WARN] [1774889280.185911238] [scaled_joint_trajectory_controller]: Aborted due to state tolerance violation
+[move_group-1] [WARN] [1774889280.235548895] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Controller 'scaled_joint_trajectory_controller' failed with error PATH_TOLERANCE_VIOLATED: Aborted due to path tolerance violation
+[move_group-1] [WARN] [1774889280.235914413] [moveit_ros.trajectory_execution_manager]: Controller handle scaled_joint_trajectory_controller reports status ABORTED
+[move_group-1] [INFO] [1774889280.235946958] [moveit_ros.trajectory_execution_manager]: Completed trajectory execution with status ABORTED ...
+[move_group-1] [INFO] [1774889280.236047346] [moveit_move_group_default_capabilities.execute_trajectory_action_capability]: Execution completed: ABORTED
+[rviz2-2] [INFO] [1774889280.236572934] [move_group_interface]: Execute request aborted
+[rviz2-2] [ERROR] [1774889280.236789134] [move_group_interface]: MoveGroupInterface::execute() failed or timeout reached
