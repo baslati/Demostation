@@ -19,7 +19,6 @@ Verwendung:
   python3 template_matching_node.py
 """
 import os
-import glob
 import time
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
@@ -40,6 +39,7 @@ import numpy as np
 # Konfiguration
 POINTCLOUD_TOPIC = "/camera/camera/depth/color/points"
 TEMPLATE_DIR = "/workspace/src/custom_packages/custom_code/templates"
+TEMPLATE_FILE = "cropv1_clean.pcd"
 
 # RANSAC Parameter für Tischebenen-Erkennung
 RANSAC_DISTANCE_THRESHOLD = 0.012  # 12mm - lockerer, weniger weg filtern
@@ -252,13 +252,13 @@ class TemplateMatchingNode(Node):
         # TF Broadcaster
         self.tf_broadcaster = TransformBroadcaster(self)
 
-        # Templates laden
+        # Nur ein Template laden
         self.templates = []
         self._load_templates()
 
         if not self.templates:
-            self.get_logger().error(f"Keine Templates gefunden in {TEMPLATE_DIR}!")
-            self.get_logger().error("Erstelle zuerst Templates mit pointcloud_snapshot_node.py und preprocess_template.py")
+            self.get_logger().error(f"Template nicht gefunden: {os.path.join(TEMPLATE_DIR, TEMPLATE_FILE)}")
+            self.get_logger().error("Erstelle zuerst dieses Template mit preprocess_template_ransac.py")
             return
 
         # QoS für RealSense
@@ -289,23 +289,26 @@ class TemplateMatchingNode(Node):
         self.get_logger().info(f"Matching alle {MATCH_INTERVAL}s")
 
     def _load_templates(self):
-        """Lädt alle .pcd Templates aus dem Template-Ordner."""
+        """Lädt genau ein Template aus dem Template-Ordner."""
         if not os.path.exists(TEMPLATE_DIR):
             self.get_logger().warn(f"Template-Ordner existiert nicht: {TEMPLATE_DIR}")
             return
 
-        pcd_files = sorted(glob.glob(os.path.join(TEMPLATE_DIR, "*.pcd")))
-        self.get_logger().info(f"Lade {len(pcd_files)} Templates aus {TEMPLATE_DIR}...")
+        path = os.path.join(TEMPLATE_DIR, TEMPLATE_FILE)
+        self.get_logger().info(f"Lade Template: {path}")
 
-        for path in pcd_files:
-            pcd = o3d.io.read_point_cloud(path)
-            if len(pcd.points) == 0:
-                self.get_logger().warn(f"  Überspringe leeres Template: {path}")
-                continue
+        if not os.path.exists(path):
+            self.get_logger().warn(f"Template-Datei fehlt: {path}")
+            return
 
-            name = os.path.splitext(os.path.basename(path))[0]
-            template = TemplateMatcher(name, pcd, VOXEL_SIZE)
-            self.templates.append(template)
+        pcd = o3d.io.read_point_cloud(path)
+        if len(pcd.points) == 0:
+            self.get_logger().warn(f"Template ist leer: {path}")
+            return
+
+        name = os.path.splitext(os.path.basename(path))[0]
+        template = TemplateMatcher(name, pcd, VOXEL_SIZE)
+        self.templates.append(template)
 
     def listener_callback(self, msg):
         """Empfängt Punktwolken und führt bei Bedarf Matching durch."""

@@ -156,6 +156,26 @@ def estimate_normals(pcd):
     return pcd
 
 
+def compute_centroid_and_translate(pcd):
+    """
+    Berechnet den Centroid (Mittelpunkt) und zentriert die Punktwolke.
+    Der Origin liegt dann in der Mitte der Zange.
+    
+    Returns:
+        pcd: Zentrierte Punktwolke
+        centroid: numpy array [x, y, z] des Original-Centroid im Kamera-Frame
+    """
+    points = np.asarray(pcd.points)
+    centroid = points.mean(axis=0)
+    
+    # Verschiebe alle Punkte relativ, sodass der Centroid im Origin liegt
+    pcd.translate(-centroid, relative=True)
+    
+    print(f"  Centroid berechnet: [{centroid[0]:.4f}, {centroid[1]:.4f}, {centroid[2]:.4f}] m")
+    print(f"  Zange zentriert um Origin (0, 0, 0)")
+    
+    return pcd, centroid
+
 def visualize(pcd, window_name="Preview"):
     """Zeigt die Punktwolke zur visuellen Kontrolle."""
     print(f"  Visualisierung geöffnet. Fenster schließen zum Fortfahren...")
@@ -259,8 +279,13 @@ Beispiele:
     else:
         print("\n[5/5] Normalen übersprungen (--normals zum Aktivieren)")
 
+    # 6. Centroid-Zentrierung
+    print("\n[6/6] Zange um Centroid zentrieren...")
+    pcd, centroid = compute_centroid_and_translate(pcd)
+
     if args.preview:
-        visualize(pcd, "NACHHER (Bereinigtes Template)")
+        visualize(pcd, "NACHHER (Bereinigtes Template mit zentriertem Origin)")
+
 
     # Ausgabepfad bestimmen
     if args.output:
@@ -278,6 +303,7 @@ Beispiele:
     print(f"\n{'=' * 50}")
     print(f"Template gespeichert: {output_path}")
     print(f"Endgültige Punktanzahl: {len(pcd.points)}")
+    print(f"Origin: Zangen-Mittelpunkt (Centroid)")
     print(f"{'=' * 50}")
 
 

@@ -210,3 +210,8 @@ workspace/src/custom_code/
     └── pliers_round_clean.pcd
 ```
 
+python3 /workspace/src/custom_packages/custom_code/preprocess_template_ransac.py /workspace/src/custom_packages/custom_code/scans/cropv1.pcd \
+  --ransac-threshold 0.005 \
+  --cluster-eps 0.015 \
+  --voxel-size 0.002 \
+  --normals --preview

@@ -15,6 +15,8 @@ echo "Zum Testen der Kamera:"
 echo "1. 'realsense-viewer' für schnellen Test"
 echo "2. 'ros2 launch realsense2_camera rs_launch.py' für ROS2 Node"
 echo "3. ros2 launch realsense2_camera rs_launch.py pointcloud.enable:=true temporal_filter.enable:=true "
+echo "ros2 launch realsense2_camera rs_launch.py pointcloud.enable:=true align_depth.enable:=true enable_sync:=true depth_module.depth_profile:=848x480x30 rgb_camera.color_profile:=1280x720x30 temporal_filter.enable:=true spatial_filter.enable:=true hole_filling_filter.enable:=true"
+echo "ros2 launch realsense2_camera rs_launch.py pointcloud.enable:=true align_depth.enable:=true enable_sync:=true"
 echo " docker exec -it d405_test_container bash
 python3 /workspace/src/custom_packages/custom_code/template_matching_node.py"
 echo " docker exec -it d405_test_container bash
