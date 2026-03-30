@@ -39,7 +39,7 @@ IMAGE_TOPIC = "/camera/camera/color/image_raw"
 CAMERA_INFO_TOPIC = "/camera/camera/color/camera_info"
 ROI_CLOUD_TOPIC = "/cloud_roi_cropped"
 
-TEMPLATE_PATH = "/workspace/src/custom_packages/custom_code/templates/cropv1_clean.pcd"
+TEMPLATE_PATH = "/workspace/src/custom_packages/custom_code/templates/cropv1_clean_direction.pcd"
 
 MARKER_SIZE = 0.05
 MARKER_ID = 0
@@ -48,8 +48,10 @@ FRAME_PREFIX = "aruco_"
 # x_min x_max y_min y_max z_min z_max (im Marker-Frame)
 CROP_BOUNDS_MARKER = (-0.03, 0.38, -0.22, 0.03, 0.008, 0.03)
 
-MATCH_INTERVAL = 1.0
+# Schnelleres Re-Matching verbessert Robustheit bei Bewegung.
+MATCH_INTERVAL = 0.35
 MAX_RAW_POINTS = 60000
+MAX_ROI_CLOUD_POINTS = 30000
 VOXEL_SIZE_SCENE = 0.0025
 VOXEL_SIZE_TEMPLATE = 0.0025
 
@@ -62,10 +64,10 @@ CLUSTER_MIN_POINTS = 30
 MIN_CLUSTER_POINTS = 90
 MAX_CLUSTERS_TO_TEST = 4
 
-ICP_THRESHOLD = 0.008
+ICP_THRESHOLD = 0.010
 ICP_MAX_ITER = 45
-MIN_SEARCH_FITNESS = 0.80
-MAX_SEARCH_RMSE = 0.0042
+MIN_SEARCH_FITNESS = 0.60
+MAX_SEARCH_RMSE = 0.1
 
 POSE_SMOOTH_ALPHA = 0.55
 
@@ -73,8 +75,8 @@ ARUCO_FILTER_ALPHA = 0.12
 ARUCO_MAX_JUMP_M = 0.02
 ARUCO_DEADBAND_M = 0.0015
 
-TRACKING_MIN_FITNESS = 0.70
-TRACKING_MAX_RMSE = 0.0042
+TRACKING_MIN_FITNESS = 0.60
+TRACKING_MAX_RMSE = 0.010
 REDETECT_PERIOD = 2
 PUBLISH_ROI_CLOUD = True
 
@@ -181,11 +183,23 @@ class TemplateMatchingRoiIcpNode(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
         )
+        
+        qos_pub = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=3,  # Groesserer Buffer um Blockierungen zu vermeiden
+        )
 
         self.create_subscription(PointCloud2, POINTCLOUD_TOPIC, self._on_cloud, qos)
         self.create_subscription(CameraInfo, CAMERA_INFO_TOPIC, self._on_camera_info, 10)
         self.create_subscription(Image, IMAGE_TOPIC, self._on_image, 10)
-        self.pub_roi_cloud = self.create_publisher(PointCloud2, ROI_CLOUD_TOPIC, 10)
+        self.pub_roi_cloud = self.create_publisher(PointCloud2, ROI_CLOUD_TOPIC, qos_pub)
+        
+        # Separate Thread fuer ROI Cloud Publishing um Blockierungen zu vermeiden
+        self.roi_cloud_lock = threading.Lock()
+        self.roi_cloud_queue = (None, None)  # (header, points_np)
+        self.roi_publish_thread = threading.Thread(target=self._roi_publish_worker, daemon=True)
+        self.roi_publish_thread.start()
 
         self.get_logger().info("Robustes ROI-ICP Matching gestartet")
         self.get_logger().info(f"Template: {TEMPLATE_PATH}")
@@ -366,7 +380,9 @@ class TemplateMatchingRoiIcpNode(Node):
                 return
 
             if PUBLISH_ROI_CLOUD:
-                self._publish_roi_cloud(msg.header, roi_points)
+                # ROI Cloud in Queue fuer asynchrones Publishing
+                with self.roi_cloud_lock:
+                    self.roi_cloud_queue = (msg.header, roi_points)
 
             self.match_cycle += 1
             mode = "search"
@@ -413,17 +429,31 @@ class TemplateMatchingRoiIcpNode(Node):
         except Exception as e:
             self.get_logger().error(f"Matching-Fehler: {e}")
 
-    def _publish_roi_cloud(self, header, points_np):
-        """Publiziert die hart gecroppte ROI-Punktwolke (XYZ)."""
-        try:
-            if points_np is None or len(points_np) == 0:
-                return
-
-            # Nur XYZ publizieren fuer geringe Last.
-            msg = pc2.create_cloud_xyz32(header, points_np[:, :3].tolist())
-            self.pub_roi_cloud.publish(msg)
-        except Exception as e:
-            self.get_logger().debug(f"ROI-Publish Fehler: {e}")
+    def _roi_publish_worker(self):
+        """Asynchroner Worker-Thread fuer ROI Cloud Publishing."""
+        while True:
+            time.sleep(0.05)  # ~20 Hz asynchrone Publikation
+            with self.roi_cloud_lock:
+                header, points_np = self.roi_cloud_queue
+            
+            if header is None or points_np is None:
+                continue
+            
+            try:
+                if len(points_np) == 0:
+                    continue
+                
+                # Groesse begrenzen um Blockierungen zu vermeiden
+                p = points_np
+                if len(p) > MAX_ROI_CLOUD_POINTS:
+                    step = max(1, len(p) // MAX_ROI_CLOUD_POINTS)
+                    p = p[::step]
+                
+                # Schneller: NumPy-Array direkt statt .tolist()
+                msg = pc2.create_cloud_xyz32(header, p[:, :3])
+                self.pub_roi_cloud.publish(msg)
+            except Exception as e:
+                self.get_logger().debug(f"ROI-Publish Fehler: {e}")
 
     def _cluster_candidates(self, pcd):
         labels = np.array(pcd.cluster_dbscan(
@@ -457,8 +487,8 @@ class TemplateMatchingRoiIcpNode(Node):
         best_rmse = float("inf")
         best_tf = None
 
-        # Mehrere Startorientierungen gegen Symmetrien / flache Lage
-        z_hyp = [0.0, np.pi / 2.0, np.pi, -np.pi / 2.0]
+        # Sehr dichte Startorientierungen: 16 Winkel (alle 22.5 Grad).
+        z_hyp = np.linspace(-np.pi, np.pi, 16, endpoint=False).tolist()
 
         for ang in z_hyp:
             r_init = r0 @ rot_z(ang)
