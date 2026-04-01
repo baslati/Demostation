@@ -167,3 +167,11 @@ praktischen Effekt hatte und die Lage stabilisiert hat.
 ---
 Diese README2 wurde erstellt, um die letzten Schritte transparent,
 nachvollziehbar und ohne Verkuerzung zu dokumentieren.
+
+
+## Fehler die noch auftraten:
+manuellen bewegen, nach neu bauen am Teach pendant das programm neu starten 
+Sonst wurde es direkt abgelehnt 
+
+Aber die Geschwindigkeit hat keine Probleme gemacht 
+
