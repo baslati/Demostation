@@ -14,7 +14,7 @@ def generate_launch_description():
         'ur_moveit.launch.py'
     )
     control_launch = os.path.join(
-        get_package_share_directory('ur_robot_driver'),
+        get_package_share_directory('custom_ur_description'),
         'launch',
         'ur_control.launch.py'
     )
@@ -57,6 +57,11 @@ def generate_launch_description():
                 'ur_type': ur_type,
                 'robot_ip': robot_ip,
                 'use_fake_hardware': use_fake_hardware,
+                'runtime_config_package': 'custom_ur_description',
+                'controllers_file': '/workspace/custom_code/custom_ur_description/config/ur_controllers.yaml',
+                'description_package': 'custom_ur_description',
+                'description_file': 'CUSTOM_ur3e.urdf.xacro',
+                'initial_joint_controller': 'scaled_joint_trajectory_controller',
                 'launch_rviz': 'false'
             }.items()
         ),

@@ -29,6 +29,8 @@
 #
 # Author: Denis Stogl
 
+import os
+
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterFile, ParameterValue
 from launch_ros.substitutions import FindPackageShare
@@ -204,9 +206,13 @@ def launch_setup(context, *args, **kwargs):
         "robot_description": ParameterValue(value=robot_description_content, value_type=str)
     }
 
-    initial_joint_controllers = PathJoinSubstitution(
-        [FindPackageShare(runtime_config_package), "config", controllers_file]
-    )
+    controllers_file_value = context.perform_substitution(controllers_file)
+    if os.path.isabs(controllers_file_value):
+        initial_joint_controllers = controllers_file_value
+    else:
+        initial_joint_controllers = PathJoinSubstitution(
+            [FindPackageShare(runtime_config_package), "config", controllers_file]
+        )
 
     rviz_config_file = PathJoinSubstitution(
         [FindPackageShare(description_package), "rviz", "view_robot.rviz"]
