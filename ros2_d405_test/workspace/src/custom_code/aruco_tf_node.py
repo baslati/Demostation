@@ -1,3 +1,5 @@
+#Zeigt Aruco Marker in RVIZ an 
+
 #!/usr/bin/env python3
 import numpy as np
 import cv2
