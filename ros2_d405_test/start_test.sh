@@ -1,11 +1,15 @@
 #!/bin/bash
 set -e
 
+# Beide Container muessen dieselbe ROS Domain nutzen.
+export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
+
 # In Projektordner wechseln
 cd "$(dirname "$0")"
 
 echo "Setze X11 Rechte für Docker..."
 xhost +local:docker
+echo "ROS_DOMAIN_ID wird verwendet: ${ROS_DOMAIN_ID}"
 
 echo "Baue Docker Image (mit Host-Netzwerk für besseren Internetzugriff)..."
 docker build --network host -t d405-test-image .

@@ -26,7 +26,6 @@ import numpy as np
 import open3d as o3d
 import rclpy
 import sensor_msgs_py.point_cloud2 as pc2
-from cv_bridge import CvBridge
 from geometry_msgs.msg import TransformStamped
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
@@ -78,7 +77,7 @@ ARUCO_DEADBAND_M = 0.0015
 TRACKING_MIN_FITNESS = 0.60
 TRACKING_MAX_RMSE = 0.010
 REDETECT_PERIOD = 2
-PUBLISH_ROI_CLOUD = False
+PUBLISH_ROI_CLOUD = True
 
 POINT_COUNT_RATIO_MIN = 0.45
 POINT_COUNT_RATIO_MAX = 1.80
@@ -154,7 +153,6 @@ class TemplateMatchingRoiIcpNode(Node):
 
         self.tf_broadcaster = TransformBroadcaster(self)
 
-        self.bridge = CvBridge()
         self.k = None
         self.dist = None
         self.camera_frame = "camera_color_optical_frame"
@@ -185,7 +183,7 @@ class TemplateMatchingRoiIcpNode(Node):
         )
         
         qos_pub = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
             depth=3,  # Groesserer Buffer um Blockierungen zu vermeiden
         )
@@ -265,7 +263,10 @@ class TemplateMatchingRoiIcpNode(Node):
         if self.k is None:
             return
 
-        frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        frame = self._image_to_bgr8(msg)
+        if frame is None:
+            return
+
         corners, ids, _ = self.detector.detectMarkers(frame)
         if ids is None:
             return
@@ -328,6 +329,31 @@ class TemplateMatchingRoiIcpNode(Node):
                 self.marker_position = np.array(filt_tvec, dtype=np.float64)
                 self.marker_rotation = np.array(r_mat, dtype=np.float64)
                 self.marker_last_stamp = time.time()
+
+    def _image_to_bgr8(self, msg: Image):
+        if msg.height == 0 or msg.width == 0:
+            return None
+
+        data = np.frombuffer(msg.data, dtype=np.uint8)
+        expected_rgb_bytes = msg.height * msg.width * 3
+
+        if msg.encoding in ("bgr8", "rgb8"):
+            if data.size < expected_rgb_bytes:
+                return None
+            img = data[:expected_rgb_bytes].reshape((msg.height, msg.width, 3))
+            if msg.encoding == "rgb8":
+                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            return img
+
+        if msg.encoding == "mono8":
+            expected_mono_bytes = msg.height * msg.width
+            if data.size < expected_mono_bytes:
+                return None
+            mono = data[:expected_mono_bytes].reshape((msg.height, msg.width))
+            return cv2.cvtColor(mono, cv2.COLOR_GRAY2BGR)
+
+        self.get_logger().debug(f"Nicht unterstuetztes Bild-Encoding: {msg.encoding}")
+        return None
 
     def _crop_roi(self, points):
         with self.marker_lock:

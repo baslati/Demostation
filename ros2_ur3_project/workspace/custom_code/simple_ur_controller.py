@@ -91,7 +91,7 @@ class SimpleURController(Node):
             raise RuntimeError('FK fehlgeschlagen')
         return res.pose_stamped[0]
 
-    # Plants eine Bewegung zu einer Zielpose (xyz + rpy)
+    # Plant eine Bewegung zu einer Zielpose (xyz + rpy)
     # Prüft Kollisionen und gibt die geplante Trajektorie zurück
     def plan_to_pose(self, x, y, z, roll, pitch, yaw):
         # Zielpose als PoseStamped erzeugen
@@ -179,9 +179,7 @@ def main():
     # 2. Zielpose: 5cm höher in z-Richtung, Orientierung beibehalten
     x = pose.pose.position.x
     y = pose.pose.position.y
-    print(f"Aktuelles z: {pose.pose.position.z:.4f}")
-    z = pose.pose.position.z + 0.05  # 5cm nach oben (Vorzeichen geändert!)
-    print(f"Ziel-z: {z:.4f}")
+    z = pose.pose.position.z - 0.05  # 5cm nach oben
 
     # Orientierung aus aktueller Pose übernehmen (Quaternion -> RPY)
     quat = pose.pose.orientation

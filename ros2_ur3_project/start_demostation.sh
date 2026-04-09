@@ -1,11 +1,16 @@
 #!/bin/bash
 set -e
 
+# Beide Container muessen dieselbe ROS Domain nutzen.
+ROS_DOMAIN_ID_VALUE="${ROS_DOMAIN_ID:-0}"
+
 # In Projektordner wechseln
 cd /home/orin/Desktop/Demostation
 
 echo "Setze X11 Rechte für Docker..."
 xhost +local:docker
+
+echo "ROS_DOMAIN_ID wird verwendet: ${ROS_DOMAIN_ID_VALUE}"
 
 echo "Im Container bitte ausführen:"
 echo "colcon build --symlink-install"
@@ -13,6 +18,7 @@ echo "ros2 launch custom_ur_moveit_config combined_ur3e.launch.py use_fake_hardw
 
 echo "Starte Docker Container..."
 docker run --name demostation-ur3 -it --rm --net=host \
+  --env="ROS_DOMAIN_ID=${ROS_DOMAIN_ID_VALUE}" \
   --env="DISPLAY=$DISPLAY" \
   --env="LIBGL_ALWAYS_SOFTWARE=1" \
   --env="MESA_GL_VERSION_OVERRIDE=3.3" \
