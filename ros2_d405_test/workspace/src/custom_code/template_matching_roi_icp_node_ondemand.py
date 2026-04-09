@@ -45,7 +45,8 @@ ARUCO_DEADBAND_M = 0.0015
 DETECTED_LATCH_PUBLISH_RATE_HZ = 10.0
 
 # One-shot tool scan timeout
-TOOL_TIMEOUT_SEC = 8.0
+TOOL_TIMEOUT_SEC = 12.0
+MIN_CLOUD_STAMP_AFTER_SCAN_SEC = 0.10
 
 # Template / ROI / ICP
 TEMPLATE_PATH = "/workspace/src/custom_packages/custom_code/templates/cropv1_clean_direction.pcd"
@@ -150,6 +151,10 @@ def rot_z(theta: float) -> np.ndarray:
     return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
 
 
+def stamp_to_seconds(stamp) -> float:
+    return float(stamp.sec) + float(stamp.nanosec) * 1e-9
+
+
 class D405ArucoThenToolOnceNode(Node):
     def __init__(self) -> None:
         super().__init__("d405_aruco_then_tool_once_node")
@@ -169,7 +174,10 @@ class D405ArucoThenToolOnceNode(Node):
         self.wait_for_enter = False
         self.scan_active = False
         self.scan_deadline = 0.0
-        self.last_match_time = 0.0
+        self.scan_start_ros_time = 0.0
+        self.last_cloud_process_time = 0.0
+        self.latest_cloud_msg = None
+        self.cloud_lock = threading.Lock()
 
         self.marker_position = None
         self.marker_rotation = None
@@ -198,6 +206,8 @@ class D405ArucoThenToolOnceNode(Node):
         self._shutdown = False
         self.input_thread = threading.Thread(target=self._input_loop, daemon=True)
         self.input_thread.start()
+        self.cloud_worker_thread = threading.Thread(target=self._cloud_worker, daemon=True)
+        self.cloud_worker_thread.start()
         self.detected_latch_thread = threading.Thread(target=self._detected_latch_worker, daemon=True)
         self.detected_latch_thread.start()
 
@@ -359,82 +369,117 @@ class D405ArucoThenToolOnceNode(Node):
             self.get_logger().info("Scan laeuft bereits")
             return
 
+        # Nur frische Clouds nach dem Enter-Trigger fuer den aktuellen Scan zulassen.
+        with self.cloud_lock:
+            self.latest_cloud_msg = None
+
+        with self.detected_lock:
+            self.last_detected_tf = None
+
         self.scan_active = True
         self.scan_deadline = time.time() + TOOL_TIMEOUT_SEC
-        self.last_match_time = 0.0
+        self.scan_start_ros_time = self.get_clock().now().nanoseconds * 1e-9
+        self.last_cloud_process_time = 0.0
         self._publish_status("TOOL_SCAN_START")
         self.get_logger().info("═══ TOOL SCAN START ═══")
 
     def _on_cloud(self, msg: PointCloud2) -> None:
         if not self.scan_active:
             return
+        with self.cloud_lock:
+            self.latest_cloud_msg = msg
 
-        if time.time() > self.scan_deadline:
-            self.scan_active = False
-            self._publish_status("TOOL_SCAN_NOT_FOUND")
-            self.get_logger().warn(f"Timeout nach {TOOL_TIMEOUT_SEC:.1f}s")
-            self.get_logger().warn("✗ Keine Zange gefunden")
+    def _cloud_worker(self) -> None:
+        while not self._shutdown and rclpy.ok():
+            if not self.scan_active:
+                time.sleep(0.02)
+                continue
+
+            if time.time() > self.scan_deadline:
+                self.scan_active = False
+                self._publish_status("TOOL_SCAN_NOT_FOUND")
+                self.get_logger().warn(f"Timeout nach {TOOL_TIMEOUT_SEC:.1f}s")
+                self.get_logger().warn("✗ Keine Zange gefunden")
+                continue
+
+            now = time.time()
+            if now - self.last_cloud_process_time < MATCH_INTERVAL:
+                time.sleep(0.005)
+                continue
+
+            with self.cloud_lock:
+                cloud_msg = self.latest_cloud_msg
+                self.latest_cloud_msg = None
+
+            if cloud_msg is None:
+                time.sleep(0.005)
+                continue
+
+            cloud_stamp_sec = stamp_to_seconds(cloud_msg.header.stamp)
+            if cloud_stamp_sec > 0.0:
+                min_allowed_stamp = self.scan_start_ros_time + MIN_CLOUD_STAMP_AFTER_SCAN_SEC
+                if cloud_stamp_sec < min_allowed_stamp:
+                    time.sleep(0.002)
+                    continue
+
+            self.last_cloud_process_time = now
+
+            try:
+                self._process_cloud_msg(cloud_msg)
+            except Exception as exc:
+                self.get_logger().debug(f"Tool-Scan Debug: {exc}")
+
+    def _process_cloud_msg(self, msg: PointCloud2) -> None:
+        pts = [[p[0], p[1], p[2]] for p in pc2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True)]
+        if len(pts) < MIN_CLUSTER_POINTS:
             return
 
-        now = time.time()
-        if now - self.last_match_time < MATCH_INTERVAL:
+        points_np = np.asarray(pts, dtype=np.float64)
+        if len(points_np) > MAX_RAW_POINTS:
+            step = max(1, len(points_np) // MAX_RAW_POINTS)
+            points_np = points_np[::step]
+
+        crop_result = self._crop_roi(points_np, msg.header.frame_id)
+        if crop_result is None:
             return
-        self.last_match_time = now
+        roi_points, p_marker, r_marker = crop_result
 
-        try:
-            pts = [[p[0], p[1], p[2]] for p in pc2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True)]
-            if len(pts) < MIN_CLUSTER_POINTS:
-                return
+        result = self._match_roi_points(roi_points)
+        if result is None:
+            return
 
-            points_np = np.asarray(pts, dtype=np.float64)
-            if len(points_np) > MAX_RAW_POINTS:
-                step = max(1, len(points_np) // MAX_RAW_POINTS)
-                points_np = points_np[::step]
+        translation, rotation, _, _, _ = result
 
-            crop_result = self._crop_roi(points_np, msg.header.frame_id)
-            if crop_result is None:
-                return
-            roi_points, p_marker, r_marker = crop_result
+        # Direkte Berechnung marker->detected im Pointcloud-Frame.
+        r_rel = r_marker.T @ rotation
+        p_rel = r_marker.T @ (translation - p_marker)
+        self._publish_detected_tf(p_rel, r_rel)
+        qx, qy, qz, qw = rotmat_to_quat(r_rel)
 
-            result = self._match_roi_points(roi_points)
-            if result is None:
-                return
+        pose = PoseStamped()
+        pose.header.stamp = self.get_clock().now().to_msg()
+        pose.header.frame_id = MARKER_FRAME
+        pose.pose.position.x = float(p_rel[0])
+        pose.pose.position.y = float(p_rel[1])
+        pose.pose.position.z = float(p_rel[2])
+        pose.pose.orientation.x = qx
+        pose.pose.orientation.y = qy
+        pose.pose.orientation.z = qz
+        pose.pose.orientation.w = qw
 
-            translation, rotation, _, _, _ = result
+        self.pose_pub.publish(pose)
+        p = pose.pose.position
+        q = pose.pose.orientation
+        self.get_logger().info(
+            f"✓ Zange erkannt und publiziert in {MARKER_FRAME}: "
+            f"x={p.x:.4f}, y={p.y:.4f}, z={p.z:.4f}, "
+            f"qx={q.x:.4f}, qy={q.y:.4f}, qz={q.z:.4f}, qw={q.w:.4f}"
+        )
 
-            # Direkte Berechnung marker->detected im Pointcloud-Frame.
-            r_rel = r_marker.T @ rotation
-            p_rel = r_marker.T @ (translation - p_marker)
-            self._publish_detected_tf(p_rel, r_rel)
-            qx, qy, qz, qw = rotmat_to_quat(r_rel)
-
-            pose = PoseStamped()
-            pose.header.stamp = self.get_clock().now().to_msg()
-            pose.header.frame_id = MARKER_FRAME
-            pose.pose.position.x = float(p_rel[0])
-            pose.pose.position.y = float(p_rel[1])
-            pose.pose.position.z = float(p_rel[2])
-            pose.pose.orientation.x = qx
-            pose.pose.orientation.y = qy
-            pose.pose.orientation.z = qz
-            pose.pose.orientation.w = qw
-
-            self.pose_pub.publish(pose)
-            p = pose.pose.position
-            q = pose.pose.orientation
-            self.get_logger().info(
-                f"✓ Zange erkannt und publiziert in {MARKER_FRAME}: "
-                f"x={p.x:.4f}, y={p.y:.4f}, z={p.z:.4f}, "
-                f"qx={q.x:.4f}, qy={q.y:.4f}, qz={q.z:.4f}, qw={q.w:.4f}"
-            )
-
-            self.scan_active = False
-            self._publish_status("TOOL_SCAN_OK")
-            self.get_logger().info("═══ TOOL SCAN OK ═══")
-            self.get_logger().info("Bereit fuer naechsten Enter-Scan")
-
-        except Exception as exc:
-            self.get_logger().debug(f"Tool-Scan Debug: {exc}")
+        self.scan_active = False
+        self._publish_status("TOOL_SCAN_OK")
+        self.get_logger().info("═══ TOOL SCAN OK ═══")
+        self.get_logger().info("Bereit fuer naechsten Enter-Scan")
 
     def _crop_roi(self, points: np.ndarray, cloud_frame: str):
         try:
