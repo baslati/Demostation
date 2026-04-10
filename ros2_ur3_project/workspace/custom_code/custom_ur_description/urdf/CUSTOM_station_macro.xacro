@@ -10,6 +10,7 @@
 	robot_mount_xy:='1.0 1.0'
 	robot_mount_z:=1.0 
 	robot_mount_yaw:=0.0   
+	aruco_on_station:='0.0 0.81 0.02'
 	rgba_grey:='0.4 0.4 0.4 0.5'
 	rgba_blue:='0.0 0.0 1.0 0.5'
 	rgba_black:='0.0 0.0 0.0 0.8'
@@ -85,6 +86,15 @@
 		<xacro:elementary_unit prefix="wbk22" size_x="0.06" size_y="0.06" height="0.12" pos_on_station="0.245 0.52 0.08" rgba="${rgba_black}"/>
 		<!-- Wand -->
 		<xacro:elementary_unit prefix="wall" size_x="0.02" size_y="0.35" height="0.45" pos_on_station="0 0.46 0.02" rgba="${rgba_black}"/>
+
+		<!-- Fester Referenz-Frame fuer den ArUco-Ursprung auf der Tischoberseite. -->
+		<!-- Wichtig: Nicht 'aruco_0' nennen, um keinen TF-Konflikt mit dem D405-Tracker zu erzeugen. -->
+		<link name="aruco_table_ref_0"/>
+		<joint name="station_to_aruco_table_ref_0" type="fixed">
+			<parent link="station"/>
+			<child  link="aruco_table_ref_0"/>
+			<origin xyz="${aruco_on_station}" rpy="0 0 0"/>
+		</joint>
 
 	</xacro:macro>
 

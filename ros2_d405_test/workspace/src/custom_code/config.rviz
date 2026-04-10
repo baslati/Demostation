@@ -7,6 +7,7 @@ Panels:
         - /Global Options1
         - /Status1
         - /TF1
+        - /PointCloud21
       Splitter Ratio: 0.5147058963775635
     Tree Height: 725
   - Class: rviz_common/Selection
@@ -55,6 +56,14 @@ Visualization Manager:
         All Enabled: false
         aruco_0:
           Value: true
+        aruco_table_ref_0:
+          Value: true
+        base:
+          Value: true
+        base_link:
+          Value: true
+        base_link_inertia:
+          Value: true
         camera_color_frame:
           Value: false
         camera_color_optical_frame:
@@ -65,7 +74,73 @@ Visualization Manager:
           Value: false
         camera_link:
           Value: true
+        custom_cylinder:
+          Value: true
         detected_cropv1_center:
+          Value: true
+        egpc40_gripper:
+          Value: true
+        flange:
+          Value: true
+        forearm_link:
+          Value: true
+        ft_frame:
+          Value: true
+        shoulder_link:
+          Value: true
+        station:
+          Value: true
+        station_cube:
+          Value: true
+        station_top:
+          Value: true
+        tcp:
+          Value: true
+        tool0:
+          Value: true
+        tool0_controller:
+          Value: true
+        top_plate_KOS:
+          Value: true
+        top_plate_cube:
+          Value: true
+        u1_KOS:
+          Value: true
+        u1_cube:
+          Value: true
+        u4_KOS:
+          Value: true
+        u4_cube:
+          Value: true
+        upper_arm_link:
+          Value: true
+        wall_KOS:
+          Value: true
+        wall_cube:
+          Value: true
+        wbk12_KOS:
+          Value: true
+        wbk12_cube:
+          Value: true
+        wbk1_KOS:
+          Value: true
+        wbk1_cube:
+          Value: true
+        wbk22_KOS:
+          Value: true
+        wbk22_cube:
+          Value: true
+        wbk2_KOS:
+          Value: true
+        wbk2_cube:
+          Value: true
+        world:
+          Value: true
+        wrist_1_link:
+          Value: true
+        wrist_2_link:
+          Value: true
+        wrist_3_link:
           Value: true
       Marker Scale: 0.5
       Name: TF
@@ -77,11 +152,11 @@ Visualization Manager:
           camera_color_frame:
             camera_color_optical_frame:
               aruco_0:
-                {}
+                detected_cropv1_center:
+                  {}
           camera_depth_frame:
             camera_depth_optical_frame:
-              detected_cropv1_center:
-                {}
+              {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -107,7 +182,7 @@ Visualization Manager:
       Selectable: true
       Size (Pixels): 3
       Size (m): 0.009999999776482582
-      Style: Flat Squares
+      Style: Points
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -213,10 +288,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.4403962790966034
+      Pitch: 0.5203962922096252
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.358615398406982
+      Yaw: 5.153615474700928
     Saved: ~
 Window Geometry:
   Displays:

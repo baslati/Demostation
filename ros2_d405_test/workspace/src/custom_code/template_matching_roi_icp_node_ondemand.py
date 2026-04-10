@@ -71,10 +71,10 @@ ICP_MAX_ITER = 45
 MIN_SEARCH_FITNESS = 0.60
 MAX_SEARCH_RMSE = 0.10
 
-POINT_COUNT_RATIO_MIN = 0.45
+POINT_COUNT_RATIO_MIN = 0.35
 POINT_COUNT_RATIO_MAX = 1.80
-PCA_EXTENT_RATIO_MIN = 0.55
-PCA_EXTENT_RATIO_MAX = 1.70
+PCA_EXTENT_RATIO_MIN = 0.45
+PCA_EXTENT_RATIO_MAX = 1.90
 
 DICT_MAP = {
     "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
@@ -444,7 +444,18 @@ class D405ArucoThenToolOnceNode(Node):
             return
         roi_points, p_marker, r_marker = crop_result
 
-        result = self._match_roi_points(roi_points)
+        result, best_fit, best_rmse = self._match_roi_points(roi_points)
+        if np.isfinite(best_rmse):
+            self.get_logger().info(
+                f"ICP Bestwert im Scan: fitness={best_fit:.4f} (min {MIN_SEARCH_FITNESS:.2f}), "
+                f"rmse={best_rmse:.4f} (max {MAX_SEARCH_RMSE:.3f})"
+            )
+        else:
+            self.get_logger().info(
+                f"ICP Bestwert im Scan: fitness={best_fit:.4f} (min {MIN_SEARCH_FITNESS:.2f}), "
+                "rmse=n/a"
+            )
+
         if result is None:
             return
 
@@ -583,7 +594,10 @@ class D405ArucoThenToolOnceNode(Node):
         pcd.points = o3d.utility.Vector3dVector(roi_points)
         pcd = pcd.voxel_down_sample(VOXEL_SIZE_SCENE)
         if len(pcd.points) < MIN_CLUSTER_POINTS:
-            return None
+            self.get_logger().info(
+                f"ICP Diagnose: zu wenige ROI-Punkte nach Voxel ({len(pcd.points)} < {MIN_CLUSTER_POINTS})"
+            )
+            return None, 0.0, float("inf")
 
         pcd_for_match = pcd
         try:
@@ -602,21 +616,29 @@ class D405ArucoThenToolOnceNode(Node):
         best_tf = None
         best_fit = 0.0
         best_rmse = float("inf")
+        reject_small = 0
+        reject_point_ratio = 0
+        reject_extent = 0
+        icp_attempts = 0
 
         for cand in candidates:
             cand_points = np.asarray(cand.points, dtype=np.float64)
             if len(cand_points) < MIN_CLUSTER_POINTS:
+                reject_small += 1
                 continue
 
             point_ratio = len(cand_points) / float(max(1, self.template_point_count))
             if point_ratio < POINT_COUNT_RATIO_MIN or point_ratio > POINT_COUNT_RATIO_MAX:
+                reject_point_ratio += 1
                 continue
 
             cand_extent = self._pca_extent(cand_points)
             extent_ratio = cand_extent / self.template_pca_extent
             if np.any(extent_ratio < PCA_EXTENT_RATIO_MIN) or np.any(extent_ratio > PCA_EXTENT_RATIO_MAX):
+                reject_extent += 1
                 continue
 
+            icp_attempts += 1
             result = self._icp_for_candidate(cand_points)
             if result is None:
                 continue
@@ -627,12 +649,43 @@ class D405ArucoThenToolOnceNode(Node):
                 best_rmse = rmse
                 best_tf = tf_mat
 
-        if best_tf is None or best_fit < MIN_SEARCH_FITNESS or best_rmse > MAX_SEARCH_RMSE:
-            return None
+        if best_tf is None and len(candidates) > 0:
+            # Fallback: Wenn alle Kandidaten an Vorfiltern scheitern, trotzdem ICP auf Clustern versuchen.
+            for cand in candidates:
+                cand_points = np.asarray(cand.points, dtype=np.float64)
+                if len(cand_points) < MIN_CLUSTER_POINTS:
+                    continue
+                icp_attempts += 1
+                result = self._icp_for_candidate(cand_points)
+                if result is None:
+                    continue
+                tf_mat, fit, rmse = result
+                if (fit > best_fit) or (abs(fit - best_fit) < 1e-6 and rmse < best_rmse):
+                    best_fit = fit
+                    best_rmse = rmse
+                    best_tf = tf_mat
+
+            self.get_logger().info(
+                "ICP Diagnose: Fallback ohne Shape-Filter aktiv "
+                f"(Kandidaten={len(candidates)}, ICP-Versuche={icp_attempts})"
+            )
+
+        self.get_logger().info(
+            "ICP Diagnose: "
+            f"roi_raw={len(roi_points)}, roi_ds={len(pcd.points)}, match_pts={len(pcd_for_match.points)}, "
+            f"kandidaten={len(candidates)}, icp_versuche={icp_attempts}, "
+            f"verworfen_small={reject_small}, verworfen_ratio={reject_point_ratio}, verworfen_extent={reject_extent}"
+        )
+
+        if best_tf is None:
+            return None, best_fit, best_rmse
+
+        if best_fit < MIN_SEARCH_FITNESS or best_rmse > MAX_SEARCH_RMSE:
+            return None, best_fit, best_rmse
 
         rot = best_tf[:3, :3]
         trans = best_tf[:3, 3]
-        return trans, rot, best_fit, best_rmse, best_tf
+        return (trans, rot, best_fit, best_rmse, best_tf), best_fit, best_rmse
 
     def _publish_detected_tf(self, translation_marker: np.ndarray, rotation_marker: np.ndarray):
         """Publiziert Zangen-TF direkt unter aruco_0 und merkt ihn fuer Latch-Republish."""

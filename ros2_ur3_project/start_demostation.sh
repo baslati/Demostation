@@ -16,9 +16,16 @@ echo "Im Container bitte ausführen:"
 echo "colcon build --symlink-install"
 echo "ros2 launch custom_ur_moveit_config combined_ur3e.launch.py use_fake_hardware:=false"
 
+echo "Baue UR3 Docker Image..."
+docker build --network host -t ur3-ros2 -f ros2_ur3_project/Dockerfile ros2_ur3_project
+
+echo "Entferne alten Containernamen (falls vorhanden)..."
+docker rm -f demostation-ur3 >/dev/null 2>&1 || true
+
 echo "Starte Docker Container..."
 docker run --name demostation-ur3 -it --rm --net=host \
   --env="ROS_DOMAIN_ID=${ROS_DOMAIN_ID_VALUE}" \
+  --env="FASTDDS_BUILTIN_TRANSPORTS=UDPv4" \
   --env="DISPLAY=$DISPLAY" \
   --env="LIBGL_ALWAYS_SOFTWARE=1" \
   --env="MESA_GL_VERSION_OVERRIDE=3.3" \
