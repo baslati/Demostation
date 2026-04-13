@@ -65,9 +65,14 @@ PLAN_SERVICE_TIMEOUT_SEC = 25.0
 HOLD_SECONDS = 2.0
 OPEN_SECONDS = 2.0
 
+# Vor dem Greifen wird relativ zur Marker-/Zangenorientierung
+# um +Y verfahren (in Markerkoordinaten, dann nach base_link transformiert).
+PRE_GRIP_MARKER_Y_OFFSET_M = 0.04
+POST_GRIP_LIFT_M = 0.02
+
 # Sicherheitsuntergrenze fuer direkte Griffposition in base_link.
 # Verhindert Zielpunkte auf/unter Tischniveau, die oft zu Planungsfehlern fuehren.
-MIN_TARGET_Z_IN_BASE_M = 0.004
+MIN_TARGET_Z_IN_BASE_M = 0.0032
 # Falls die direkte Planung fehlschlaegt, mit diesen zusaetzlichen Hoehen erneut versuchen.
 PLANNING_Z_RETRY_STEPS_M = (0.0, 0.008, 0.015)
 
@@ -615,13 +620,15 @@ class UR3GripFromPoseNode(Node):
                 f"[TARGET] Greifpunkt in base_link: x={p_base[0]:.4f}, y={p_base[1]:.4f}, z={p_base[2]:.4f}"
             )
 
-            if p_base[2] < MIN_TARGET_Z_IN_BASE_M:
+            p_grip = p_base.copy()
+
+            if p_grip[2] < MIN_TARGET_Z_IN_BASE_M:
                 self.get_logger().warn(
                     "[SAFETY] Ziel-z liegt auf/unter Tischnaehe: "
-                    f"z={p_base[2]:.4f} < {MIN_TARGET_Z_IN_BASE_M:.4f}. "
+                    f"z={p_grip[2]:.4f} < {MIN_TARGET_Z_IN_BASE_M:.4f}. "
                     "Setze auf Mindesthoehe."
                 )
-                p_base[2] = MIN_TARGET_Z_IN_BASE_M
+                p_grip[2] = MIN_TARGET_Z_IN_BASE_M
 
             target_yaw = yaw_from_quat(q_base) + TOOL_YAW_OFFSET
             q_target = rpy_to_quat(GRIPPER_FIXED_ROLL, GRIPPER_FIXED_PITCH, target_yaw)
@@ -634,40 +641,111 @@ class UR3GripFromPoseNode(Node):
                 f"  Resultat Quaternion: qx={q_target.x:.4f}, qy={q_target.y:.4f}, qz={q_target.z:.4f}, qw={q_target.w:.4f}"
             )
 
-            self.get_logger().info("[PLANNING] Plane Bewegung direkt zur Greifposition mit MoveIt...")
+            self.get_logger().info("[PLANNING] Plane Bewegung zur gespeicherten Griffposition mit MoveIt...")
             planning_errors = []
-            jt_target = None
+            jt_grip = None
             for dz in PLANNING_Z_RETRY_STEPS_M:
-                z_try = p_base[2] + dz
+                z_try = p_grip[2] + dz
                 self.get_logger().info(
                     f"[PLANNING] Versuche Zielhoehe z={z_try:.4f} (dz={dz:+.3f})"
                 )
                 try:
-                    jt_target = self.plan_to_pose_quat(p_base[0], p_base[1], z_try, q_target)
-                    p_base[2] = z_try
+                    jt_grip = self.plan_to_pose_quat(p_grip[0], p_grip[1], z_try, q_target)
+                    p_grip[2] = z_try
                     break
                 except Exception as plan_exc:
                     planning_errors.append(str(plan_exc))
 
-            if jt_target is None:
+            if jt_grip is None:
                 raise RuntimeError(
                     "Keine Trajektorie gefunden; moeglich: Tischkollision/Unterschreitung, "
                     f"Planungsversuche={len(PLANNING_Z_RETRY_STEPS_M)}, letzte Fehler={planning_errors[-1] if planning_errors else 'unbekannt'}"
                 )
 
-            self.get_logger().info(f"[PLANNING] ✓ Trajektorie geplant ({len(jt_target.points)} Punkte)")
+            self.get_logger().info(f"[PLANNING] ✓ Trajektorie geplant ({len(jt_grip.points)} Punkte)")
 
-            self.get_logger().info("[EXECUTION] Fuehre Trajektorie zur Greifposition aus...")
-            self.execute_trajectory(jt_target)
-            self.get_logger().info("[EXECUTION] ✓ Greifposition erreicht")
+            self.get_logger().info("[EXECUTION] Fuehre Trajektorie zur Griffposition aus...")
+            self.execute_trajectory(jt_grip)
+            self.get_logger().info("[EXECUTION] ✓ Griffposition erreicht")
+
+            # Zusatzfahrt in der Ebene: +Y im Marker-/Zangenframe, auf XY projiziert.
+            r_base_marker = quat_to_rotmat(q_base.x, q_base.y, q_base.z, q_base.w)
+            marker_y_in_base = r_base_marker[:, 1]
+            marker_y_xy = np.array([marker_y_in_base[0], marker_y_in_base[1], 0.0], dtype=np.float64)
+            norm_xy = float(np.linalg.norm(marker_y_xy))
+            if norm_xy < 1e-9:
+                raise RuntimeError("Marker +Y kann nicht in XY-Ebene projiziert werden (norm~0)")
+            marker_y_xy /= norm_xy
+
+            delta_xy = marker_y_xy * PRE_GRIP_MARKER_Y_OFFSET_M
+            p_push = p_grip.copy()
+            p_push[0] += delta_xy[0]
+            p_push[1] += delta_xy[1]
+            # in der Ebene: z bleibt unveraendert
+
+            self.get_logger().info(
+                "[PRE-GRIP] Zusatzfahrt in Ebene entlang Marker +Y: "
+                f"dy_local={PRE_GRIP_MARKER_Y_OFFSET_M:.3f}m, "
+                f"delta_xy=({delta_xy[0]:+.4f}, {delta_xy[1]:+.4f}), z_const={p_push[2]:.4f}"
+            )
+
+            self.get_logger().info("[PLANNING] Plane Zusatzfahrt in der Ebene...")
+            jt_push = self.plan_to_pose_quat(p_push[0], p_push[1], p_push[2], q_target)
+            self.get_logger().info(f"[PLANNING] ✓ Zusatzfahrt geplant ({len(jt_push.points)} Punkte)")
+
+            self.get_logger().info("[EXECUTION] Fuehre Zusatzfahrt in der Ebene aus...")
+            self.execute_trajectory(jt_push)
+            self.get_logger().info("[EXECUTION] ✓ Zusatzfahrt abgeschlossen")
 
             self.get_logger().info("[GRIPPER] Greifer wird GESCHLOSSEN...")
-            gripper(self, close=True, pulse=True, pulse_time=HOLD_SECONDS)
-            self.get_logger().info(f"[GRIPPER] ✓ Greifer zu (Pin 16 an/aus nach {HOLD_SECONDS:.1f}s)")
+            # Pin 16 bleibt waehrend der gesamten Greifphase auf 1
+            # (auch waehrend der folgenden Fahrten), bis explizit geoeffnet wird.
+            if not set_tool_do(self, 16, 1.0):
+                raise RuntimeError("Greifer CLOSE (Pin 16=1) fehlgeschlagen")
+            self.get_logger().info(f"[GRIPPER] Pin 16 auf 1 gesetzt - halte mindestens {HOLD_SECONDS:.1f}s")
+            time.sleep(HOLD_SECONDS)
+            self.get_logger().info(
+                f"[GRIPPER] ✓ Greifer zu (Pin 16 bleibt auf 1 bis zum Loslassen)"
+            )
+
+            # Nach dem Greifen: 2 cm anheben, dann wieder 2 cm absenken.
+            p_lift = p_push.copy()
+            p_lift[2] += POST_GRIP_LIFT_M
+            self.get_logger().info(
+                f"[POST-GRIP] Hebe {POST_GRIP_LIFT_M:.3f}m an: z {p_push[2]:.4f} -> {p_lift[2]:.4f}"
+            )
+            jt_lift = self.plan_to_pose_quat(p_lift[0], p_lift[1], p_lift[2], q_target)
+            self.execute_trajectory(jt_lift)
+            self.get_logger().info("[POST-GRIP] ✓ Anheben abgeschlossen")
+
+            p_drop = p_push.copy()
+            self.get_logger().info(
+                f"[POST-GRIP] Senke wieder ab auf z={p_drop[2]:.4f}"
+            )
+            jt_drop = self.plan_to_pose_quat(p_drop[0], p_drop[1], p_drop[2], q_target)
+            self.execute_trajectory(jt_drop)
+            self.get_logger().info("[POST-GRIP] ✓ Absenken abgeschlossen")
 
             self.get_logger().info("[GRIPPER] Greifer wird GEOEFFNET...")
+            if not set_tool_do(self, 16, 0.0):
+                raise RuntimeError("Greifer CLOSE Release (Pin 16=0) fehlgeschlagen")
+            self.get_logger().info("[GRIPPER] Pin 16 auf 0 gesetzt (Freigabe vor Oeffnen)")
             gripper(self, close=False, pulse=True, pulse_time=OPEN_SECONDS)
             self.get_logger().info(f"[GRIPPER] ✓ Greifer offen (Pin 17 an/aus nach {OPEN_SECONDS:.1f}s)")
+
+            # Rueckfahrt zur Kameraposition mit derselben Logik rueckwaerts:
+            # den 4cm-Schritt in der Ebene entlang -MarkerY zurueckfahren.
+            p_back = p_push.copy()
+            p_back[0] -= delta_xy[0]
+            p_back[1] -= delta_xy[1]
+            self.get_logger().info(
+                "[RETURN] Fahre 4cm-Schritt rueckwaerts in der Ebene: "
+                f"delta_xy_back=({-delta_xy[0]:+.4f}, {-delta_xy[1]:+.4f}), "
+                f"target=({p_back[0]:.4f}, {p_back[1]:.4f}, {p_back[2]:.4f})"
+            )
+            jt_back = self.plan_to_pose_quat(p_back[0], p_back[1], p_back[2], q_target)
+            self.execute_trajectory(jt_back)
+            self.get_logger().info("[RETURN] ✓ Rueckfahrt zur Kameraposition abgeschlossen")
 
             if RETURN_HOME_AFTER_GRIP:
                 self.get_logger().info("[HOME] Fahre zur Home-Position zurueck...")
