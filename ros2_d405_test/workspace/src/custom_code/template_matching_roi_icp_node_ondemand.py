@@ -50,6 +50,7 @@ MIN_CLOUD_STAMP_AFTER_SCAN_SEC = 0.10
 
 # Template / ROI / ICP
 TEMPLATE_PATH = "/workspace/src/custom_packages/custom_code/templates/cropv1_clean_direction.pcd"
+TEMPLATE_ID = "cropv1_clean_direction"
 CROP_BOUNDS_MARKER = (-0.03, 0.38, -0.22, 0.03, 0.008, 0.03)
 
 MATCH_INTERVAL = 0.25
@@ -469,7 +470,7 @@ class D405ArucoThenToolOnceNode(Node):
 
         pose = PoseStamped()
         pose.header.stamp = self.get_clock().now().to_msg()
-        pose.header.frame_id = MARKER_FRAME
+        pose.header.frame_id = f"{MARKER_FRAME}|{TEMPLATE_ID}"
         pose.pose.position.x = float(p_rel[0])
         pose.pose.position.y = float(p_rel[1])
         pose.pose.position.z = float(p_rel[2])
@@ -485,6 +486,9 @@ class D405ArucoThenToolOnceNode(Node):
             f"✓ Zange erkannt und publiziert in {MARKER_FRAME}: "
             f"x={p.x:.4f}, y={p.y:.4f}, z={p.z:.4f}, "
             f"qx={q.x:.4f}, qy={q.y:.4f}, qz={q.z:.4f}, qw={q.w:.4f}"
+        )
+        self.get_logger().info(
+            f"Template in frame_id integriert: {pose.header.frame_id}"
         )
 
         self.scan_active = False

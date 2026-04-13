@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-UR3 Hover + Grip from Pose
+UR3 Grip from Pose
 
 Ablauf:
 1) Wartet auf Pose auf /tool_target_pose (Frame: aruco_0)
 2) Transformiert Pose in base_link
-3) Faehrt zur Hover-Position ueber dem Ziel
+3) Faehrt direkt zum definierten Griffpunkt
 4) Greifer zu -> 2s halten -> Greifer auf
 5) Faehrt zur Home-Pose zurueck
 """
@@ -14,7 +14,7 @@ import math
 import os
 import threading
 import time
-from typing import Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 import rclpy
@@ -43,6 +43,17 @@ from trajectory_msgs.msg import JointTrajectory
 TARGET_TOPIC = "/tool_target_pose"
 
 DEFAULT_TEMPLATE_ID = "cropv1_clean_direction"
+# Pro Template den Transform vom erkannten Mittelpunkt zum Griffpunkt hinterlegen.
+TEMPLATE_GRASP_OFFSETS: Dict[str, Dict[str, Tuple[float, float, float, float]]] = {
+
+    # Hinweis: Bei diesem Template war die Y-Richtung in der Praxis invertiert.
+    # Darum wird die Translation mit translation_sign_xyz gespiegelt.
+    "cropv1_clean_direction": {
+        "translation_xyz_m": (+0.003352, +0.067173, -0.014160),
+        "translation_sign_xyz": (+1.0, -1.0, +1.0),
+        "rotation_quat_xyzw": (+0.998850, -0.035604, -0.006631, +0.031408),
+    },
+}
 
 SERVICE_TIMEOUT_SEC = 8.0
 ACTION_TIMEOUT_SEC = 30.0
@@ -51,9 +62,14 @@ JOINT_STATE_WAIT_SEC = 10.0
 STARTUP_MOVE_HOME = True
 PLAN_SERVICE_TIMEOUT_SEC = 25.0
 
-# 2 cm ueber Zielpunkt
-HOVER_Z_OFFSET_M = 0.02
 HOLD_SECONDS = 2.0
+OPEN_SECONDS = 2.0
+
+# Sicherheitsuntergrenze fuer direkte Griffposition in base_link.
+# Verhindert Zielpunkte auf/unter Tischniveau, die oft zu Planungsfehlern fuehren.
+MIN_TARGET_Z_IN_BASE_M = 0.004
+# Falls die direkte Planung fehlschlaegt, mit diesen zusaetzlichen Hoehen erneut versuchen.
+PLANNING_Z_RETRY_STEPS_M = (0.0, 0.008, 0.015)
 
 # Greifer zeigt standardmaessig nach unten wie in der funktionierenden
 # cube_manipulator_gripper_ros.py (Roll = pi, Pitch = 0).
@@ -204,12 +220,12 @@ def split_frame_and_template(frame_id: str) -> Tuple[str, str]:
     return base_frame, template_id
 
 
-class UR3HoverGripFromPoseNode(Node):
+class UR3GripFromPoseNode(Node):
     def __init__(self) -> None:
-        super().__init__("ur3_hover_grip_from_pose_node")
-        
+        super().__init__("ur3_grip_from_pose_node")
+
         self.get_logger().info("═══════════════════════════════════════════════════════")
-        self.get_logger().info("  UR3 HOVER + GRIP FROM POSE NODE STARTEN")
+        self.get_logger().info("  UR3 GRIP FROM POSE NODE STARTEN")
         self.get_logger().info("═══════════════════════════════════════════════════════")
 
         self.group = "ur_manipulator"
@@ -218,7 +234,7 @@ class UR3HoverGripFromPoseNode(Node):
         self.action_name = "/scaled_joint_trajectory_controller/follow_joint_trajectory"
 
         self.get_logger().info(f"[INIT] ROS_DOMAIN_ID={os.environ.get('ROS_DOMAIN_ID', 'nicht gesetzt')}")
-        self.get_logger().info(f"[INIT] Suche MoveIt Services und Trajectory Action Server...")
+        self.get_logger().info("[INIT] Suche MoveIt Services und Trajectory Action Server...")
 
         self.cli_ik = self.create_client(GetPositionIK, "/compute_ik")
         self.cli_plan = self.create_client(GetMotionPlan, "/plan_kinematic_path")
@@ -230,7 +246,7 @@ class UR3HoverGripFromPoseNode(Node):
             if not cli.wait_for_service(timeout_sec=10.0):
                 raise RuntimeError("MoveIt Service nicht verfuegbar")
         self.get_logger().info("[INIT] ✓ Alle MoveIt Services gefunden")
-        
+
         if not self.exec_ac.wait_for_server(timeout_sec=10.0):
             raise RuntimeError("Trajectory Action Server nicht verfuegbar")
         self.get_logger().info("[INIT] ✓ Trajectory Action Server gefunden")
@@ -243,7 +259,6 @@ class UR3HoverGripFromPoseNode(Node):
         self.latest_joint_state = None
         self.startup_done = False
 
-        # QoS-Profil fuer robuste inter-container Kommunikation
         qos_pose = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST,
@@ -253,12 +268,10 @@ class UR3HoverGripFromPoseNode(Node):
         self.get_logger().info(f"[SUBSCRIPTION] Abonniere Topic: {TARGET_TOPIC} (PoseStamped, QoS=BEST_EFFORT)")
         self.create_subscription(PoseStamped, TARGET_TOPIC, self._on_target_pose, qos_pose)
         self.create_subscription(JointState, "/joint_states", self._on_joint_state, 20)
-        
-        self.create_timer(2.0, self._subscription_health_check)
 
-        # Start-Check nach dem eigentlichen Spin starten (kein Service-Deadlock in __init__).
+        self.create_timer(2.0, self._subscription_health_check)
         self.create_timer(0.5, self._startup_home_once)
-        
+
         self.get_logger().info("═══════════════════════════════════════════════════════")
         self.get_logger().info("  ✓ NODE BEREIT - WARTE AUF ZIELPOSE")
         self.get_logger().info("═══════════════════════════════════════════════════════")
@@ -266,7 +279,45 @@ class UR3HoverGripFromPoseNode(Node):
         self.get_logger().info("Template-ID wird in frame_id uebertragen: 'frame|template_id'")
         self.get_logger().info("Erwarteter Frame: aruco_0 oder base_link")
         self.get_logger().info("Warte auf erste Nachricht...")
-        self.get_logger().info("Hinweis: Mit 'ros2 topic echo /tool_target_pose' in einem anderen Terminal testen!")
+
+    def _apply_template_grasp_offset(self, msg: PoseStamped, template_id: str) -> PoseStamped:
+        config = TEMPLATE_GRASP_OFFSETS.get(template_id)
+        if config is None:
+            self.get_logger().warn(
+                f"[TEMPLATE] Kein Offset fuer '{template_id}' definiert, nutze '{DEFAULT_TEMPLATE_ID}'"
+            )
+            config = TEMPLATE_GRASP_OFFSETS[DEFAULT_TEMPLATE_ID]
+
+        t_raw = np.array(config["translation_xyz_m"], dtype=np.float64)
+        t_sign = np.array(config.get("translation_sign_xyz", (+1.0, +1.0, +1.0)), dtype=np.float64)
+        t_off = t_raw * t_sign
+        q_off = config["rotation_quat_xyzw"]
+
+        p_in = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z], dtype=np.float64)
+        q_in = msg.pose.orientation
+        r_in = quat_to_rotmat(q_in.x, q_in.y, q_in.z, q_in.w)
+        r_off = quat_to_rotmat(q_off[0], q_off[1], q_off[2], q_off[3])
+
+        p_grip = p_in + (r_in @ t_off)
+        r_grip = r_in @ r_off
+        qx, qy, qz, qw = rotmat_to_quat(r_grip)
+
+        out = PoseStamped()
+        out.header = msg.header
+        out.pose.position.x = float(p_grip[0])
+        out.pose.position.y = float(p_grip[1])
+        out.pose.position.z = float(p_grip[2])
+        out.pose.orientation.x = qx
+        out.pose.orientation.y = qy
+        out.pose.orientation.z = qz
+        out.pose.orientation.w = qw
+
+        self.get_logger().info(
+            "[TEMPLATE] Griffpunkt-Offset angewendet: "
+            f"template={template_id}, t_eff=({t_off[0]:+.4f}, {t_off[1]:+.4f}, {t_off[2]:+.4f}), "
+            f"sign=({t_sign[0]:+.0f}, {t_sign[1]:+.0f}, {t_sign[2]:+.0f})"
+        )
+        return out
 
     def _wait_future_result(self, fut, label: str, timeout_sec: float):
         deadline = time.time() + timeout_sec
@@ -328,12 +379,7 @@ class UR3HoverGripFromPoseNode(Node):
         sphere.dimensions = [0.01]
         pos_c.constraint_region = BoundingVolume()
         pos_c.constraint_region.primitives = [sphere]
-        pos_c.constraint_region.primitive_poses = [
-            PoseStamped(
-                header=PoseStamped().header,
-                pose=PoseStamped().pose,
-            ).pose
-        ]
+        pos_c.constraint_region.primitive_poses = [PoseStamped(header=PoseStamped().header, pose=PoseStamped().pose).pose]
         pos_c.constraint_region.primitive_poses[0].position.x = float(x)
         pos_c.constraint_region.primitive_poses[0].position.y = float(y)
         pos_c.constraint_region.primitive_poses[0].position.z = float(z)
@@ -374,8 +420,6 @@ class UR3HoverGripFromPoseNode(Node):
         return jt
 
     def get_robot_state(self) -> RobotState:
-        # Bevorzugt den RobotState aus MoveIt wie in der funktionierenden
-        # Referenzdatei. Falls das fehlschlaegt, verwenden wir den letzten /joint_states Fallback.
         try:
             req = GetPlanningScene.Request()
             req.components = PlanningSceneComponents(components=PlanningSceneComponents.ROBOT_STATE)
@@ -419,9 +463,7 @@ class UR3HoverGripFromPoseNode(Node):
         last_ik_error = None
         for avoid_collisions in (True, False):
             ik_req.ik_request.avoid_collisions = avoid_collisions
-            self.get_logger().info(
-                f"[IK] ComputeIK (avoid_collisions={avoid_collisions})..."
-            )
+            self.get_logger().info(f"[IK] ComputeIK (avoid_collisions={avoid_collisions})...")
             fut = self.cli_ik.call_async(ik_req)
             try:
                 candidate = self._wait_future_result(fut, "ComputeIK", IK_SERVICE_TIMEOUT_SEC)
@@ -490,12 +532,7 @@ class UR3HoverGripFromPoseNode(Node):
             raise RuntimeError("Ausfuehrung fehlgeschlagen")
 
     def _target_in_base(self, msg: PoseStamped) -> Tuple[np.ndarray, Quaternion]:
-        p = np.array([
-            msg.pose.position.x,
-            msg.pose.position.y,
-            msg.pose.position.z,
-        ], dtype=np.float64)
-
+        p = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z], dtype=np.float64)
         frame = normalize_frame_id(msg.header.frame_id)
 
         q = msg.pose.orientation
@@ -509,7 +546,6 @@ class UR3HoverGripFromPoseNode(Node):
             raise RuntimeError(f"Unbekannter Eingangsframe: {msg.header.frame_id}")
 
         if TARGET_POSE_IS_TABLE_COORDS:
-            # Tischkoordinaten auf base_link abbilden via bekanntem Tisch-Nullpunkt.
             p_base = np.array([
                 TABLE_ORIGIN_IN_BASE_X_M + (TABLE_TO_BASE_X_SIGN * p[0]),
                 TABLE_ORIGIN_IN_BASE_Y_M + (TABLE_TO_BASE_Y_SIGN * p[1]),
@@ -538,12 +574,7 @@ class UR3HoverGripFromPoseNode(Node):
         return p_base, q_out
 
     def _move_home(self) -> None:
-        # Gleiches Schema wie bei der Zielpose: fixer Roll/Pitch + Yaw.
-        q_home = rpy_to_quat(
-            GRIPPER_FIXED_ROLL,
-            GRIPPER_FIXED_PITCH,
-            HOME_YAW_RAD + TOOL_YAW_OFFSET,
-        )
+        q_home = rpy_to_quat(GRIPPER_FIXED_ROLL, GRIPPER_FIXED_PITCH, HOME_YAW_RAD + TOOL_YAW_OFFSET)
         home_x = TABLE_ORIGIN_IN_BASE_X_M + (TABLE_TO_BASE_X_SIGN * HOME_TABLE_X_M)
         home_y = TABLE_ORIGIN_IN_BASE_Y_M + (TABLE_TO_BASE_Y_SIGN * HOME_TABLE_Y_M)
         home_z = TABLE_ORIGIN_IN_BASE_Z_M + (TABLE_TO_BASE_Z_SIGN * HOME_TABLE_Z_M)
@@ -561,7 +592,6 @@ class UR3HoverGripFromPoseNode(Node):
         self.get_logger().info("Zur Home-Pose gefahren")
 
     def _subscription_health_check(self) -> None:
-        """Periodischer Check ob Nachrichten ankommen (alle 2s)."""
         with self.count_lock:
             count = self.pose_received_count
         if count == 0:
@@ -575,46 +605,70 @@ class UR3HoverGripFromPoseNode(Node):
     def _process_target_pose(self, msg: PoseStamped) -> None:
         try:
             base_frame, template_id = split_frame_and_template(msg.header.frame_id)
-            msg_target = PoseStamped()
-            msg_target.header = msg.header
-            msg_target.header.frame_id = base_frame
-            msg_target.pose = msg.pose
+            msg_grip = self._apply_template_grasp_offset(msg, template_id)
+            msg_grip.header.frame_id = base_frame
             self.get_logger().info(f"[TRANSFORM] Transformiere Pose von {msg.header.frame_id} -> base_link...")
-            p_base, q_base = self._target_in_base(msg_target)
-            self.get_logger().info(f"[TRANSFORM] ✓ Transformation erfolgreich")
+            p_base, q_base = self._target_in_base(msg_grip)
+            self.get_logger().info("[TRANSFORM] ✓ Transformation erfolgreich")
 
-            hover = p_base.copy()
-            hover[2] += HOVER_Z_OFFSET_M
-            self.get_logger().info(f"[HOVER] Berechne Hover-Position (+{HOVER_Z_OFFSET_M:.3f}m in Z):")
-            self.get_logger().info(f"  Ziel in base_link: x={p_base[0]:.4f}, y={p_base[1]:.4f}, z={p_base[2]:.4f}")
-            self.get_logger().info(f"  Hover in base_link: x={hover[0]:.4f}, y={hover[1]:.4f}, z={hover[2]:.4f}")
+            self.get_logger().info(
+                f"[TARGET] Greifpunkt in base_link: x={p_base[0]:.4f}, y={p_base[1]:.4f}, z={p_base[2]:.4f}"
+            )
 
-            # Aus Zangenpose nur Yaw uebernehmen; Roll/Pitch bleiben fest.
+            if p_base[2] < MIN_TARGET_Z_IN_BASE_M:
+                self.get_logger().warn(
+                    "[SAFETY] Ziel-z liegt auf/unter Tischnaehe: "
+                    f"z={p_base[2]:.4f} < {MIN_TARGET_Z_IN_BASE_M:.4f}. "
+                    "Setze auf Mindesthoehe."
+                )
+                p_base[2] = MIN_TARGET_Z_IN_BASE_M
+
             target_yaw = yaw_from_quat(q_base) + TOOL_YAW_OFFSET
-            q_hover = rpy_to_quat(GRIPPER_FIXED_ROLL, GRIPPER_FIXED_PITCH, target_yaw)
-            self.get_logger().info(f"[ORIENT] Greifer-Orientierung = nur Yaw von Tool:")
-            self.get_logger().info(f"  Fixe Roll/Pitch (parallel zu Tisch): roll={GRIPPER_FIXED_ROLL:.3f}, pitch={GRIPPER_FIXED_PITCH:.3f}")
+            q_target = rpy_to_quat(GRIPPER_FIXED_ROLL, GRIPPER_FIXED_PITCH, target_yaw)
+            self.get_logger().info("[ORIENT] Greifer-Orientierung = nur Yaw von Tool:")
+            self.get_logger().info(
+                f"  Fixe Roll/Pitch (parallel zu Tisch): roll={GRIPPER_FIXED_ROLL:.3f}, pitch={GRIPPER_FIXED_PITCH:.3f}"
+            )
             self.get_logger().info(f"  Yaw von Zange (+ Offset {TOOL_YAW_OFFSET}): {target_yaw:.3f} rad")
-            self.get_logger().info(f"  Resultat Quaternion: qx={q_hover.x:.4f}, qy={q_hover.y:.4f}, qz={q_hover.z:.4f}, qw={q_hover.w:.4f}")
+            self.get_logger().info(
+                f"  Resultat Quaternion: qx={q_target.x:.4f}, qy={q_target.y:.4f}, qz={q_target.z:.4f}, qw={q_target.w:.4f}"
+            )
 
-            self.get_logger().info("[PLANNING] Plane Bewegung zur Hover-Position mit MoveIt...")
-            jt_hover = self.plan_to_pose_quat(hover[0], hover[1], hover[2], q_hover)
-            self.get_logger().info(f"[PLANNING] ✓ Trajektorie geplant ({len(jt_hover.points)} Punkte)")
-            
-            self.get_logger().info("[EXECUTION] Fuehre Trajektorie zur Hover-Position aus...")
-            self.execute_trajectory(jt_hover)
-            self.get_logger().info("[EXECUTION] ✓ Hover-Position erreicht")
+            self.get_logger().info("[PLANNING] Plane Bewegung direkt zur Greifposition mit MoveIt...")
+            planning_errors = []
+            jt_target = None
+            for dz in PLANNING_Z_RETRY_STEPS_M:
+                z_try = p_base[2] + dz
+                self.get_logger().info(
+                    f"[PLANNING] Versuche Zielhoehe z={z_try:.4f} (dz={dz:+.3f})"
+                )
+                try:
+                    jt_target = self.plan_to_pose_quat(p_base[0], p_base[1], z_try, q_target)
+                    p_base[2] = z_try
+                    break
+                except Exception as plan_exc:
+                    planning_errors.append(str(plan_exc))
+
+            if jt_target is None:
+                raise RuntimeError(
+                    "Keine Trajektorie gefunden; moeglich: Tischkollision/Unterschreitung, "
+                    f"Planungsversuche={len(PLANNING_Z_RETRY_STEPS_M)}, letzte Fehler={planning_errors[-1] if planning_errors else 'unbekannt'}"
+                )
+
+            self.get_logger().info(f"[PLANNING] ✓ Trajektorie geplant ({len(jt_target.points)} Punkte)")
+
+            self.get_logger().info("[EXECUTION] Fuehre Trajektorie zur Greifposition aus...")
+            self.execute_trajectory(jt_target)
+            self.get_logger().info("[EXECUTION] ✓ Greifposition erreicht")
 
             self.get_logger().info("[GRIPPER] Greifer wird GESCHLOSSEN...")
-            gripper(self, close=True, pulse=False)
-            self.get_logger().info(f"[GRIPPER] ✓ Greifer zu - halte {HOLD_SECONDS:.1f}s...")
+            gripper(self, close=True, pulse=True, pulse_time=HOLD_SECONDS)
+            self.get_logger().info(f"[GRIPPER] ✓ Greifer zu (Pin 16 an/aus nach {HOLD_SECONDS:.1f}s)")
 
-            time.sleep(HOLD_SECONDS)
-            
             self.get_logger().info("[GRIPPER] Greifer wird GEOEFFNET...")
-            gripper(self, close=False, pulse=False)
-            self.get_logger().info("[GRIPPER] ✓ Greifer offen")
-            
+            gripper(self, close=False, pulse=True, pulse_time=OPEN_SECONDS)
+            self.get_logger().info(f"[GRIPPER] ✓ Greifer offen (Pin 17 an/aus nach {OPEN_SECONDS:.1f}s)")
+
             if RETURN_HOME_AFTER_GRIP:
                 self.get_logger().info("[HOME] Fahre zur Home-Position zurueck...")
                 try:
@@ -624,7 +678,7 @@ class UR3HoverGripFromPoseNode(Node):
                     self.get_logger().warn(f"[HOME] Home-Fahrt fehlgeschlagen (Ablauf bleibt erfolgreich): {exc}")
             else:
                 self.get_logger().info("[HOME] Rueckfahrt deaktiviert (RETURN_HOME_AFTER_GRIP=False)")
-            
+
             self.get_logger().info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             self.get_logger().info("[OK] ABLAUF KOMPLETT ERFOLGREICH - BEREIT FUER NAECHSTE POSE")
             self.get_logger().info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -646,15 +700,19 @@ class UR3HoverGripFromPoseNode(Node):
             self.get_logger().warn(
                 f"[FRAME] Normalisiere frame_id '{msg.header.frame_id}' -> '{base_frame}'"
             )
-        
+
         self.get_logger().info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         self.get_logger().info(f"[EMPFANGEN] Zielpose on {TARGET_TOPIC}")
         self.get_logger().info(f"  Frame: {msg.header.frame_id}")
         self.get_logger().info(f"  Template: {template_id}")
         self.get_logger().info(f"  Zeitstempel: {msg.header.stamp.sec}.{msg.header.stamp.nanosec}")
-        self.get_logger().info(f"  Position: x={msg.pose.position.x:.4f}, y={msg.pose.position.y:.4f}, z={msg.pose.position.z:.4f}")
-        self.get_logger().info(f"  Quaternion: qx={msg.pose.orientation.x:.4f}, qy={msg.pose.orientation.y:.4f}, qz={msg.pose.orientation.z:.4f}, qw={msg.pose.orientation.w:.4f}")
-        
+        self.get_logger().info(
+            f"  Position: x={msg.pose.position.x:.4f}, y={msg.pose.position.y:.4f}, z={msg.pose.position.z:.4f}"
+        )
+        self.get_logger().info(
+            f"  Quaternion: qx={msg.pose.orientation.x:.4f}, qy={msg.pose.orientation.y:.4f}, qz={msg.pose.orientation.z:.4f}, qw={msg.pose.orientation.w:.4f}"
+        )
+
         with self.busy_lock:
             if self.busy:
                 self.get_logger().warn("[WARNUNG] Bereits in Bewegung, neue Pose wird ignoriert")
@@ -670,24 +728,20 @@ class UR3HoverGripFromPoseNode(Node):
 def set_tool_do(node: Node, pin: int, state: float, timeout: float = 5.0) -> bool:
     from ur_msgs.srv import SetIO
 
-    cli = getattr(node, "_set_io_client", None)
-    if cli is None:
-        cli = node.create_client(SetIO, "/io_and_status_controller/set_io")
-        setattr(node, "_set_io_client", cli)
-
+    cli = node.create_client(SetIO, "/io_and_status_controller/set_io")
     if not cli.wait_for_service(timeout_sec=timeout):
-        node.get_logger().error("Service /io_and_status_controller/set_io nicht verfuegbar")
+        node.get_logger().error("Service /io_and_status_controller/set_io nicht verfügbar")
         return False
 
     req = SetIO.Request()
     req.fun = 1
     req.pin = int(pin)
     req.state = float(state)
-
+    node.get_logger().info(f"Sende Tool DO: fun=1 pin={req.pin} state={req.state}")
     fut = cli.call_async(req)
 
-    # Kein spin_until_future_complete hier: die Node laeuft bereits im Executor,
-    # und dieser Aufruf kommt aus einem Worker-Thread.
+    # Wichtig: Kein spin_until_future_complete in Worker-Threads,
+    # sonst kann "generator already executing" im Executor auftreten.
     waiter = getattr(node, "_wait_future_result", None)
     if callable(waiter):
         try:
@@ -708,11 +762,23 @@ def set_tool_do(node: Node, pin: int, state: float, timeout: float = 5.0) -> boo
             return False
         res = fut.result()
 
-    return bool(getattr(res, "success", True)) if res is not None else False
+    ok = bool(getattr(res, "success", True)) if res is not None else False
+    if ok:
+        node.get_logger().info(f"Tool DO gesetzt: pin={req.pin} -> {req.state}")
+    else:
+        node.get_logger().error(f"Tool DO fehlgeschlagen: pin={req.pin} -> {req.state}; Antwort={res}")
+    return ok
 
 
 def gripper(node: Node, close: bool = True, pin_close: int = 16, pin_open: int = 17,
             pulse_time: float = 1.0, pulse: bool = True, active_high: bool = True) -> None:
+    """
+    Steuert den Greifer über Standard Digital Output (fun=1) via ROS2-Service.
+    - close=True: schließt über pin_close; False: öffnet über pin_open
+    - pulse_time: Dauer des Pulses in Sekunden (bei pulse=True)
+    - pulse: Wenn True, wird nach pulse_time wieder ausgeschaltet
+    - active_high: Wenn False, invertiert das Signal
+    """
     pin = pin_close if close else pin_open
     on = 1.0 if active_high else 0.0
     off = 0.0 if active_high else 1.0
@@ -728,7 +794,7 @@ def gripper(node: Node, close: bool = True, pin_close: int = 16, pin_open: int =
 
 def main(args=None) -> None:
     rclpy.init(args=args)
-    node = UR3HoverGripFromPoseNode()
+    node = UR3GripFromPoseNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
