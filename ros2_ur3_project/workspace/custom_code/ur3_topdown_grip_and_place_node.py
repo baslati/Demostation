@@ -49,7 +49,7 @@ TARGET_TOPIC = "/tool_target_pose"
 DEFAULT_TEMPLATE_ID = "cropv1_clean_direction"
 TEMPLATE_GRASP_OFFSETS: Dict[str, Dict[str, Tuple[float, float, float, float]]] = {
     "cropv1_clean_direction": {
-        "translation_xyz_m": (-0.003352, +0.087173, -0.014160),
+        "translation_xyz_m": (-0.001352, +0.087173, -0.014160),
         "translation_sign_xyz": (+1.0, -1.0, +1.0),
         "rotation_quat_xyzw": (+0.998850, -0.035604, -0.006631, +0.031408),
     },
@@ -61,6 +61,10 @@ IK_SERVICE_TIMEOUT_SEC = 20.0
 JOINT_STATE_WAIT_SEC = 10.0
 STARTUP_MOVE_HOME = True
 PLAN_SERVICE_TIMEOUT_SEC = 25.0
+
+# Sicherheit: Bei fehlender IK-Loesung nicht auf direct-pose ausweichen,
+# damit die Werkzeugausrichtung nicht unerwartet abweicht.
+REQUIRE_IK_SOLUTION = True
 
 HOLD_SECONDS = 2.0
 OPEN_SECONDS = 2.0
@@ -117,6 +121,16 @@ ARUCO_IN_BASE_Z_M = 0.0
 ARUCO_IN_BASE_RX = 0.0
 ARUCO_IN_BASE_RY = 0.0
 ARUCO_IN_BASE_RZ = 0.0
+
+
+FJT_ERROR_TEXT = {
+    0: "SUCCESSFUL",
+    -1: "INVALID_GOAL",
+    -2: "INVALID_JOINTS",
+    -3: "OLD_HEADER_TIMESTAMP",
+    -4: "PATH_TOLERANCE_VIOLATED",
+    -5: "GOAL_TOLERANCE_VIOLATED",
+}
 
 
 
@@ -382,9 +396,9 @@ class UR3TopDownGripAndPlaceNode(Node):
         ori_c.header.frame_id = self.base
         ori_c.link_name = self.ee_link
         ori_c.orientation = q
-        ori_c.absolute_x_axis_tolerance = 0.2
-        ori_c.absolute_y_axis_tolerance = 0.2
-        ori_c.absolute_z_axis_tolerance = 0.3
+        ori_c.absolute_x_axis_tolerance = 0.05
+        ori_c.absolute_y_axis_tolerance = 0.05
+        ori_c.absolute_z_axis_tolerance = 0.08
         ori_c.weight = 1.0
 
         constraints.position_constraints = [pos_c]
@@ -473,6 +487,11 @@ class UR3TopDownGripAndPlaceNode(Node):
             last_ik_error = RuntimeError(f"IK error_code={candidate.error_code.val}")
 
         if ik_res is None:
+            if REQUIRE_IK_SOLUTION:
+                raise RuntimeError(
+                    "IK fehlgeschlagen; direct-pose Fallback aus Sicherheitsgruenden deaktiviert "
+                    f"(Ursache: {last_ik_error})"
+                )
             self.get_logger().warn(f"[IK] Kein IK-Ergebnis, nutze direct-pose Fallback: {last_ik_error}")
             return self._plan_pose_goal_direct(x, y, z, q)
 
@@ -518,8 +537,18 @@ class UR3TopDownGripAndPlaceNode(Node):
 
         res_fut = gh.get_result_async()
         result = self._wait_future_result(res_fut, "GetResult", ACTION_TIMEOUT_SEC)
-        if result is None or getattr(result.result, "error_code", 0) != 0:
-            raise RuntimeError("Ausfuehrung fehlgeschlagen")
+        if result is None:
+            raise RuntimeError("Ausfuehrung fehlgeschlagen: kein Ergebnis")
+
+        error_code = int(getattr(result.result, "error_code", 0))
+        error_str = str(getattr(result.result, "error_string", "")).strip()
+        if error_code != 0:
+            code_label = FJT_ERROR_TEXT.get(error_code, "UNBEKANNT")
+            details = f"error_code={error_code} ({code_label})"
+            if error_str:
+                details += f", error_string='{error_str}'"
+            self.get_logger().error(f"[EXECUTE] Trajektorie fehlgeschlagen: {details}")
+            raise RuntimeError(f"Ausfuehrung fehlgeschlagen: {details}")
 
     def _target_in_base(self, msg: PoseStamped) -> Tuple[np.ndarray, Quaternion]:
         p = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z], dtype=np.float64)

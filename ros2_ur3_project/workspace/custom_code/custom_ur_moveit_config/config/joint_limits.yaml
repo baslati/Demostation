@@ -1,8 +1,8 @@
 joint_limits:
   shoulder_pan_joint:
     has_position_limits: true
-    min_position: -0.5235   # -130°
-    max_position: 3.665     # 210°
+    min_position: 1.0472    # 60 deg
+    max_position: 3.4907    # 200 deg
     has_velocity_limits: true
     max_velocity: 1.0
     has_acceleration_limits: true
@@ -10,8 +10,8 @@ joint_limits:
 
   shoulder_lift_joint:
     has_position_limits: true
-    min_position: -2.2689280276   # -130°
-    max_position: 0.0             # 0°
+    min_position: -2.0944         # -120 deg
+    max_position: -0.3491         # -20 deg
     has_velocity_limits: true
     max_velocity: 1.0
     has_acceleration_limits: true
@@ -19,8 +19,8 @@ joint_limits:
 
   elbow_joint:
     has_position_limits: true
-    min_position: -3.1416         # -180°
-    max_position: 3.1416          # 180°
+    min_position: 0.3491          # 20 deg
+    max_position: 2.6180          # 150 deg
     has_velocity_limits: true
     max_velocity: 1.0
     has_acceleration_limits: true
@@ -28,8 +28,8 @@ joint_limits:
 
   wrist_1_joint:
     has_position_limits: true
-    min_position: -6.2832         # -360°
-    max_position: 6.2832          # 360°
+    min_position: 2.0944          # 120 deg
+    max_position: 5.9341          # 340 deg
     has_velocity_limits: true
     max_velocity: 1.0
     has_acceleration_limits: true
@@ -37,8 +37,8 @@ joint_limits:
 
   wrist_2_joint:
     has_position_limits: true
-    min_position: -6.2832         # -360°
-    max_position: 6.2832          # 360°
+    min_position: -2.6180         # -150 deg
+    max_position: 0.0000          # 0 deg
     has_velocity_limits: true
     max_velocity: 1.0
     has_acceleration_limits: true
@@ -46,8 +46,8 @@ joint_limits:
 
   wrist_3_joint:
     has_position_limits: true
-    min_position: -6.2832         # -360°
-    max_position: 6.2832          # 360°
+    min_position: 0.1745          # 10 deg
+    max_position: 6.2832          # 360 deg
     has_velocity_limits: true
     max_velocity: 1.0
     has_acceleration_limits: true
