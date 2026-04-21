@@ -26,21 +26,17 @@ from builtin_interfaces.msg import Duration
 from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import PoseStamped, Quaternion
 from moveit_msgs.msg import (
-    BoundingVolume,
     Constraints,
     JointConstraint,
     MotionPlanRequest,
-    OrientationConstraint,
     PlanningSceneComponents,
-    PositionConstraint,
     RobotState,
 )
-from moveit_msgs.srv import GetMotionPlan, GetPlanningScene, GetPositionFK, GetPositionIK
+from moveit_msgs.srv import GetMotionPlan, GetPlanningScene, GetPositionIK
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
-from shape_msgs.msg import SolidPrimitive
 from trajectory_msgs.msg import JointTrajectory
 
 
@@ -60,17 +56,12 @@ ACTION_TIMEOUT_SEC = 30.0
 IK_SERVICE_TIMEOUT_SEC = 20.0
 JOINT_STATE_WAIT_SEC = 10.0
 STARTUP_MOVE_HOME = True
-PLAN_SERVICE_TIMEOUT_SEC = 25.0
-
-# Sicherheit: Bei fehlender IK-Loesung nicht auf direct-pose ausweichen,
-# damit die Werkzeugausrichtung nicht unerwartet abweicht.
-REQUIRE_IK_SOLUTION = True
 
 HOLD_SECONDS = 2.0
 OPEN_SECONDS = 2.0
 
 # Gewuenschte Sequenz
-HOVER_ABOVE_GRIP_M = 0.02
+HOVER_ABOVE_GRIP_M = 0.03
 AXIS_SHIFT_MARKER_Y_M = 0.05
 GRIP_SHIFT_MARKER_Y_M = 0.01
 POST_PLACE_RETREAT_M = 0.02
@@ -78,12 +69,13 @@ POST_PLACE_FORWARD_MARKER_Y_M = 0.02
 
 MIN_TARGET_Z_IN_BASE_M = 0.0032
 PLANNING_Z_RETRY_STEPS_M = (0.0, 0.008, 0.015)
+APPROACH_HOVER_YAW_RETRY_DEG = (0.0, 5.0, -5.0, 10.0, -10.0)
+APPROACH_HOVER_PITCH_RETRY_DEG = (0.0, 4.0, -4.0, 8.0, -8.0)
 
 GRIPPER_FIXED_ROLL = math.pi
 GRIPPER_FIXED_PITCH = 0.0
 TOOL_YAW_OFFSET = 0.0
 
-TARGET_POSE_IS_TABLE_COORDS = True
 TABLE_ORIGIN_IN_BASE_X_M = -0.15
 TABLE_ORIGIN_IN_BASE_Y_M = 0.15
 TABLE_ORIGIN_IN_BASE_Z_M = 0.0
@@ -107,21 +99,13 @@ PLACE_TABLE_Z_M = 0.0
 PLACE_YAW_RAD = math.pi
 
 # Nach dem Greifen zuerst vertikal anheben, dann zur Ablage fahren.
-POST_GRIP_LIFT_BEFORE_PLACE_M = 0.06
+POST_GRIP_LIFT_BEFORE_PLACE_M = 0.02
 
 # Schutz gegen Ablage in Tischmitte und am gleichen Ort.
 TABLE_CENTER_X_M = 0.0
 TABLE_CENTER_Y_M = 0.0
 PLACE_MIN_DIST_FROM_CENTER_M = 0.08
 PLACE_MIN_DIST_FROM_PICK_M = 0.08
-
-ARUCO_IN_BASE_X_M = 0.15
-ARUCO_IN_BASE_Y_M = 0.15
-ARUCO_IN_BASE_Z_M = 0.0
-ARUCO_IN_BASE_RX = 0.0
-ARUCO_IN_BASE_RY = 0.0
-ARUCO_IN_BASE_RZ = 0.0
-
 
 FJT_ERROR_TEXT = {
     0: "SUCCESSFUL",
@@ -203,20 +187,6 @@ def rotmat_to_quat(r: np.ndarray) -> Tuple[float, float, float, float]:
     return float(qx), float(qy), float(qz), float(qw)
 
 
-def rpy_to_rotmat(roll: float, pitch: float, yaw: float) -> np.ndarray:
-    cr = math.cos(roll)
-    sr = math.sin(roll)
-    cp = math.cos(pitch)
-    sp = math.sin(pitch)
-    cy = math.cos(yaw)
-    sy = math.sin(yaw)
-
-    rx = np.array([[1.0, 0.0, 0.0], [0.0, cr, -sr], [0.0, sr, cr]], dtype=np.float64)
-    ry = np.array([[cp, 0.0, sp], [0.0, 1.0, 0.0], [-sp, 0.0, cp]], dtype=np.float64)
-    rz = np.array([[cy, -sy, 0.0], [sy, cy, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
-    return rz @ ry @ rx
-
-
 def yaw_from_quat(q: Quaternion) -> float:
     siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
     cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
@@ -255,11 +225,10 @@ class UR3TopDownGripAndPlaceNode(Node):
 
         self.cli_ik = self.create_client(GetPositionIK, "/compute_ik")
         self.cli_plan = self.create_client(GetMotionPlan, "/plan_kinematic_path")
-        self.cli_fk = self.create_client(GetPositionFK, "/compute_fk")
         self.cli_scene = self.create_client(GetPlanningScene, "/get_planning_scene")
         self.exec_ac = ActionClient(self, FollowJointTrajectory, self.action_name)
 
-        for cli in [self.cli_ik, self.cli_plan, self.cli_fk, self.cli_scene]:
+        for cli in [self.cli_ik, self.cli_plan, self.cli_scene]:
             if not cli.wait_for_service(timeout_sec=10.0):
                 raise RuntimeError("MoveIt Service nicht verfuegbar")
         self.get_logger().info("[INIT] Alle MoveIt Services gefunden")
@@ -374,57 +343,6 @@ class UR3TopDownGripAndPlaceNode(Node):
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _plan_pose_goal_direct(self, x: float, y: float, z: float, q: Quaternion) -> JointTrajectory:
-        constraints = Constraints()
-
-        pos_c = PositionConstraint()
-        pos_c.header.frame_id = self.base
-        pos_c.link_name = self.ee_link
-        sphere = SolidPrimitive()
-        sphere.type = SolidPrimitive.SPHERE
-        sphere.dimensions = [0.01]
-        pos_c.constraint_region = BoundingVolume()
-        pos_c.constraint_region.primitives = [sphere]
-        pos_c.constraint_region.primitive_poses = [PoseStamped(header=PoseStamped().header, pose=PoseStamped().pose).pose]
-        pos_c.constraint_region.primitive_poses[0].position.x = float(x)
-        pos_c.constraint_region.primitive_poses[0].position.y = float(y)
-        pos_c.constraint_region.primitive_poses[0].position.z = float(z)
-        pos_c.constraint_region.primitive_poses[0].orientation.w = 1.0
-        pos_c.weight = 1.0
-
-        ori_c = OrientationConstraint()
-        ori_c.header.frame_id = self.base
-        ori_c.link_name = self.ee_link
-        ori_c.orientation = q
-        ori_c.absolute_x_axis_tolerance = 0.05
-        ori_c.absolute_y_axis_tolerance = 0.05
-        ori_c.absolute_z_axis_tolerance = 0.08
-        ori_c.weight = 1.0
-
-        constraints.position_constraints = [pos_c]
-        constraints.orientation_constraints = [ori_c]
-
-        mpr = MotionPlanRequest()
-        mpr.group_name = self.group
-        mpr.goal_constraints = [constraints]
-        mpr.start_state = self.get_robot_state()
-        mpr.max_velocity_scaling_factor = 0.35
-        mpr.max_acceleration_scaling_factor = 0.35
-        mpr.allowed_planning_time = 15.0
-        mpr.num_planning_attempts = 10
-
-        plan_req = GetMotionPlan.Request()
-        plan_req.motion_plan_request = mpr
-        fut = self.cli_plan.call_async(plan_req)
-        plan_res = self._wait_future_result(fut, "GetMotionPlan(direct-pose)", PLAN_SERVICE_TIMEOUT_SEC)
-        if plan_res is None or plan_res.motion_plan_response is None:
-            raise RuntimeError("GetMotionPlan(direct-pose) lieferte keine Antwort")
-
-        jt = plan_res.motion_plan_response.trajectory.joint_trajectory
-        if not jt.points:
-            raise RuntimeError("Keine Trajektorie gefunden (direct-pose)")
-        return jt
-
     def get_robot_state(self) -> RobotState:
         try:
             req = GetPlanningScene.Request()
@@ -487,13 +405,7 @@ class UR3TopDownGripAndPlaceNode(Node):
             last_ik_error = RuntimeError(f"IK error_code={candidate.error_code.val}")
 
         if ik_res is None:
-            if REQUIRE_IK_SOLUTION:
-                raise RuntimeError(
-                    "IK fehlgeschlagen; direct-pose Fallback aus Sicherheitsgruenden deaktiviert "
-                    f"(Ursache: {last_ik_error})"
-                )
-            self.get_logger().warn(f"[IK] Kein IK-Ergebnis, nutze direct-pose Fallback: {last_ik_error}")
-            return self._plan_pose_goal_direct(x, y, z, q)
+            raise RuntimeError(f"IK fehlgeschlagen (Ursache: {last_ik_error})")
 
         constraints = Constraints()
         for name, pos in zip(ik_res.solution.joint_state.name, ik_res.solution.joint_state.position):
@@ -555,7 +467,6 @@ class UR3TopDownGripAndPlaceNode(Node):
         frame = normalize_frame_id(msg.header.frame_id)
 
         q = msg.pose.orientation
-        r_target = quat_to_rotmat(q.x, q.y, q.z, q.w)
 
         if frame == self.base:
             q_out = Quaternion(x=q.x, y=q.y, z=q.z, w=q.w)
@@ -564,27 +475,12 @@ class UR3TopDownGripAndPlaceNode(Node):
         if frame != "aruco_0":
             raise RuntimeError(f"Unbekannter Eingangsframe: {msg.header.frame_id}")
 
-        if TARGET_POSE_IS_TABLE_COORDS:
-            p_base = np.array([
-                TABLE_ORIGIN_IN_BASE_X_M + (TABLE_TO_BASE_X_SIGN * p[0]),
-                TABLE_ORIGIN_IN_BASE_Y_M + (TABLE_TO_BASE_Y_SIGN * p[1]),
-                TABLE_ORIGIN_IN_BASE_Z_M + (TABLE_TO_BASE_Z_SIGN * p[2]),
-            ], dtype=np.float64)
-            q_out = Quaternion(x=q.x, y=q.y, z=q.z, w=q.w)
-            return p_base, q_out
-
-        r_base_aruco = rpy_to_rotmat(ARUCO_IN_BASE_RX, ARUCO_IN_BASE_RY, ARUCO_IN_BASE_RZ)
-        p_base_aruco = np.array([ARUCO_IN_BASE_X_M, ARUCO_IN_BASE_Y_M, ARUCO_IN_BASE_Z_M], dtype=np.float64)
-
-        p_base = p_base_aruco + (r_base_aruco @ p)
-        r_base_target = r_base_aruco @ r_target
-        qx, qy, qz, qw = rotmat_to_quat(r_base_target)
-
-        q_out = Quaternion()
-        q_out.x = qx
-        q_out.y = qy
-        q_out.z = qz
-        q_out.w = qw
+        p_base = np.array([
+            TABLE_ORIGIN_IN_BASE_X_M + (TABLE_TO_BASE_X_SIGN * p[0]),
+            TABLE_ORIGIN_IN_BASE_Y_M + (TABLE_TO_BASE_Y_SIGN * p[1]),
+            TABLE_ORIGIN_IN_BASE_Z_M + (TABLE_TO_BASE_Z_SIGN * p[2]),
+        ], dtype=np.float64)
+        q_out = Quaternion(x=q.x, y=q.y, z=q.z, w=q.w)
         return p_base, q_out
 
     def _table_to_base(self, x_table: float, y_table: float, z_table: float) -> np.ndarray:
@@ -621,6 +517,38 @@ class UR3TopDownGripAndPlaceNode(Node):
                 return jt, z_try
             except Exception as exc:
                 planning_errors.append(str(exc))
+
+            if label == "APPROACH_HOVER":
+                base_yaw = yaw_from_quat(q_target)
+                for yaw_deg in APPROACH_HOVER_YAW_RETRY_DEG[1:]:
+                    q_retry = rpy_to_quat(
+                        GRIPPER_FIXED_ROLL,
+                        GRIPPER_FIXED_PITCH,
+                        base_yaw + math.radians(yaw_deg),
+                    )
+                    try:
+                        self.get_logger().info(
+                            f"[PLANNING] {label}: retry yaw={yaw_deg:+.1f} deg bei z={z_try:.4f}"
+                        )
+                        jt = self.plan_to_pose_quat(float(p[0]), float(p[1]), z_try, q_retry)
+                        return jt, z_try
+                    except Exception as exc:
+                        planning_errors.append(str(exc))
+
+                for pitch_deg in APPROACH_HOVER_PITCH_RETRY_DEG[1:]:
+                    q_retry = rpy_to_quat(
+                        GRIPPER_FIXED_ROLL,
+                        GRIPPER_FIXED_PITCH + math.radians(pitch_deg),
+                        base_yaw,
+                    )
+                    try:
+                        self.get_logger().info(
+                            f"[PLANNING] {label}: retry pitch={pitch_deg:+.1f} deg bei z={z_try:.4f}"
+                        )
+                        jt = self.plan_to_pose_quat(float(p[0]), float(p[1]), z_try, q_retry)
+                        return jt, z_try
+                    except Exception as exc:
+                        planning_errors.append(str(exc))
 
         raise RuntimeError(
             f"{label}: keine Trajektorie gefunden; letzte Ursache={planning_errors[-1] if planning_errors else 'unbekannt'}"
@@ -738,23 +666,16 @@ class UR3TopDownGripAndPlaceNode(Node):
                 f"base=({p_place[0]:.4f}, {p_place[1]:.4f}, {p_place[2]:.4f}), yaw={PLACE_YAW_RAD + TOOL_YAW_OFFSET:.3f}"
             )
 
-            p_place_hover = p_place.copy()
-            p_place_hover[2] += HOVER_ABOVE_GRIP_M
+            # 7) In XY-Ebene zur Ablage verfahren und dabei bereits auf Ablageausrichtung drehen.
+            p_place_plane = p_place.copy()
+            p_place_plane[2] = p_after_grip_up[2]
+            self.get_logger().info("[PLACE_MOVE_ALIGN] Verfahre in Ebene zur Ablage und richte aus")
+            jt_place_plane, z_place_plane = self._plan_with_retry(p_place_plane, q_place, "PLACE_MOVE_ALIGN")
+            p_place_plane[2] = z_place_plane
+            self.execute_trajectory(jt_place_plane)
 
-            # 7) Erst zur Ablage-Hoverposition mit aktueller Ausrichtung fahren.
-            self.get_logger().info("[PLACE_HOVER] Fahre ueber Ablagepunkt")
-            jt_place_hover, z_place_hover = self._plan_with_retry(p_place_hover, q_target, "PLACE_HOVER")
-            p_place_hover[2] = z_place_hover
-            self.execute_trajectory(jt_place_hover)
-
-            # 8) Im Hover erst Ausrichtung aendern, dann erst nach unten.
-            self.get_logger().info("[PLACE_ALIGN] Richte im Hover gerade aus")
-            jt_place_align, z_place_align = self._plan_with_retry(p_place_hover, q_place, "PLACE_ALIGN_HOVER")
-            p_place_hover[2] = z_place_align
-            self.execute_trajectory(jt_place_align)
-
-            # 9) Vertikal auf Ablagehoehe
-            self.get_logger().info("[PLACE_DESCEND] Senke auf Ablagehoehe")
+            # 8) Direkt vertikal auf Ablagehoehe.
+            self.get_logger().info("[PLACE_DESCEND] Senke direkt auf Ablagehoehe")
             jt_place_desc, z_place_desc = self._plan_with_retry(p_place, q_place, "PLACE_DESCEND")
             p_place[2] = z_place_desc
             self.execute_trajectory(jt_place_desc)
