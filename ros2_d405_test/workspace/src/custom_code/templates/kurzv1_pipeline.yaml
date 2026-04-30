@@ -1,0 +1,14 @@
+template_id: kurzv1
+snapshot_pcd: /workspace/src/custom_packages/custom_code/scans/kurzv1.pcd
+template_pcd: /workspace/src/custom_packages/custom_code/templates/kurzv1_clean_direction.pcd
+crop_bounds_marker:
+  x_min: -0.150000
+  x_max: +0.150000
+  y_min: -0.100000
+  y_max: +0.100000
+  z_min: +0.000000
+  z_max: +0.300000
+grasp_offset:
+  translation_xyz_m: [+0.000000, +0.000000, +0.000000]
+  rotation_quat_xyzw: [+0.000000, +0.000000, +0.000000, +1.000000]
+generated_at: 2026-04-29T16:50:58

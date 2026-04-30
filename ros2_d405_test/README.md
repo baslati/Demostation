@@ -70,7 +70,7 @@ Zweck:
 Start (Beispiel):
 
 ```bash
-cd /workspace/src/custom_code
+cd /workspace/src/custom_packages/custom_code
 python3 preprocess_template_ransac_y_axis.py scans/cropv1.pcd --preview
 ```
 

@@ -7,6 +7,7 @@ und speichert ein sauberes Template fuer das spaetere Matching.
 
 Workflow:
   1. RANSAC Plane Detection: Findet und entfernt die Tischebene automatisch
+  Habe ich wieder deaktiviert, da es durch den guten Crop den Tisch schon rausschmeißt
   2. Cluster Extraction: Findet den groessten Cluster (= Zange)
   3. Statistical Outlier Removal: Entfernt isolierte Rauschpunkte
   4. Optional: Voxel-Downsampling fuer gleichmaessige Punktdichte
@@ -111,7 +112,7 @@ def remove_outliers(pcd, nb_neighbors=20, std_ratio=2.0):
     return filtered
 
 
-def voxel_downsample(pcd, voxel_size=0.001):
+def voxel_down_sample(pcd, voxel_size=0.001):
     """Voxel-Downsampling fuer gleichmaessige Punktdichte."""
     downsampled = pcd.voxel_down_sample(voxel_size=voxel_size)
     print(f"  Nach Downsampling ({voxel_size*1000:.1f}mm): {len(downsampled.points)} Punkte")
@@ -269,6 +270,7 @@ Beispiele:
     )
     parser.add_argument("--preview", action="store_true", help="Vorher/Nachher Visualisierung anzeigen")
     parser.add_argument("--normals", action="store_true", help="Normalen berechnen")
+    parser.add_argument("--no-ransac", action="store_true", help="RANSAC-Tischentfernung ueberspringen")
 
     args = parser.parse_args()
 
@@ -282,11 +284,14 @@ Beispiele:
     if args.preview:
         visualize(pcd, "VORHER (Roher Scan)")
 
-    print("\n[1/6] Tischebene entfernen (RANSAC)...")
-    pcd = remove_table_ransac(pcd, args.ransac_threshold, args.ransac_iterations)
-    if len(pcd.points) == 0:
-        print("\nAbbruch: Keine Punkte nach Tisch-Entfernung uebrig.")
-        sys.exit(1)
+    if not args.no_ransac:
+        print("\n[1/6] Tischebene entfernen (RANSAC)...")
+        pcd = remove_table_ransac(pcd, args.ransac_threshold, args.ransac_iterations)
+        if len(pcd.points) == 0:
+            print("\nAbbruch: Keine Punkte nach Tisch-Entfernung uebrig.")
+            sys.exit(1)
+    else:
+        print("\n[1/6] RANSAC-Tischentfernung uebersprungen")
 
     if not args.no_cluster:
         print("\n[2/6] Groessten Cluster extrahieren...")
@@ -302,7 +307,7 @@ Beispiele:
 
     if not args.no_downsample:
         print("\n[4/6] Voxel Downsampling...")
-        pcd = voxel_downsample(pcd, args.voxel_size)
+        pcd = voxel_down_sample(pcd, args.voxel_size)
     else:
         print("\n[4/6] Downsampling uebersprungen")
 

@@ -49,6 +49,12 @@ TEMPLATE_GRASP_OFFSETS: Dict[str, Dict[str, Tuple[float, float, float, float]]] 
         "translation_sign_xyz": (+1.0, -1.0, +1.0),
         "rotation_quat_xyzw": (+0.998850, -0.035604, -0.006631, +0.031408),
     },
+#y +0.055 x vorher:-0.002455
+    "kurzv3_clean_direction": {
+        "translation_xyz_m": (+0.005, +0.081226, -0.011746),
+        "translation_sign_xyz": (+1.0, -1.0, +1.0),
+        "rotation_quat_xyzw": (+0.999909, +0.001677, -0.011609, +0.006670)
+    },
 }
 
 SERVICE_TIMEOUT_SEC = 8.0

@@ -14,7 +14,10 @@ echo "ROS_DOMAIN_ID wird verwendet: ${ROS_DOMAIN_ID_VALUE}"
 
 echo "Im Container bitte ausführen:"
 echo "colcon build --symlink-install"
+echo "source /workspace/install/setup.bash"
 echo "ros2 launch custom_ur_moveit_config combined_ur3e.launch.py use_fake_hardware:=false"
+echo "python3 /workspace/custom_code/template_scan_grasp_point.py"
+echo "python3 /workspace/custom_code/ur3_topdown_grip_and_place_node.py"
 
 echo "Baue UR3 Docker Image..."
 docker build --network host -t ur3-ros2 -f ros2_ur3_project/Dockerfile ros2_ur3_project

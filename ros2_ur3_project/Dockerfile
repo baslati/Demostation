@@ -66,8 +66,6 @@ WORKDIR /workspace
 COPY workspace/src/ /workspace/src/
 
 
-COPY workspace/custom_code/custom_ur_description 	/workspace/custom_code/custom_ur_description
-COPY workspace/custom_code/custom_ur_moveit_config    	/workspace/custom_code/custom_ur_moveit_config
 
 RUN source /opt/ros/humble/setup.bash && \
     rosdep update && \
@@ -95,9 +93,18 @@ RUN apt-get update && apt-get install -y git cmake g++ make && \
     ldconfig && \
     rm -rf /tmp/UR_RTDE && rm -rf /var/lib/apt/lists/*
 
+# Open3D für die ARM64 Architektur des Jetson
+RUN pip3 install --index-url https://pypi.org/simple --ignore-installed open3d
+
+
 # Automatisch sourcen bei Shell
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
     echo "[ -f /workspace/install/setup.bash ] && source /workspace/install/setup.bash" >> /root/.bashrc
+
+
+COPY workspace/custom_code/custom_ur_description 	/workspace/custom_code/custom_ur_description
+  
+COPY workspace/custom_code/custom_ur_moveit_config    	/workspace/custom_code/custom_ur_moveit_config
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

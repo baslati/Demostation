@@ -9,9 +9,10 @@ Ablauf:
 4) Danach wird die Zangen-Erkennung gestoppt (kein Dauerbetrieb).
 """
 
+import os
 import threading
 import time
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -49,8 +50,11 @@ TOOL_TIMEOUT_SEC = 12.0
 MIN_CLOUD_STAMP_AFTER_SCAN_SEC = 0.10
 
 # Template / ROI / ICP
-TEMPLATE_PATH = "/workspace/src/custom_packages/custom_code/templates/cropv1_clean_direction.pcd"
-TEMPLATE_ID = "cropv1_clean_direction"
+TEMPLATE_DIR = "/workspace/src/custom_packages/custom_code/templates"
+TEMPLATE_SCAN_LIST = [
+    "cropv1_clean_direction",
+    "kurzv3_clean_direction",
+]
 CROP_BOUNDS_MARKER = (-0.03, 0.38, -0.22, 0.03, 0.008, 0.03)
 
 MATCH_INTERVAL = 0.25
@@ -67,9 +71,9 @@ CLUSTER_MIN_POINTS = 30
 MIN_CLUSTER_POINTS = 90
 MAX_CLUSTERS_TO_TEST = 4
 
-ICP_THRESHOLD = 0.010
-ICP_MAX_ITER = 45
-MIN_SEARCH_FITNESS = 0.60
+ICP_THRESHOLD = 0.0075
+ICP_MAX_ITER = 60
+MIN_SEARCH_FITNESS = 0.80
 MAX_SEARCH_RMSE = 0.10
 
 POINT_COUNT_RATIO_MIN = 0.35
@@ -191,8 +195,9 @@ class D405ArucoThenToolOnceNode(Node):
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(DICT_MAP["DICT_4X4_50"])
         self.detector = cv2.aruco.ArucoDetector(self.aruco_dict, cv2.aruco.DetectorParameters())
 
-        if not self._load_template():
-            self.get_logger().error("Template konnte nicht geladen werden. Node bleibt ohne Zangen-Erkennung.")
+        self.loaded_templates: Dict[str, Tuple[np.ndarray, int, np.ndarray]] = {}
+        if not self._load_templates():
+            self.get_logger().error("Keine Templates geladen. Node bleibt ohne Zangen-Erkennung.")
 
         qos_sensor = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -214,20 +219,36 @@ class D405ArucoThenToolOnceNode(Node):
 
         self.get_logger().info("Node gestartet: zuerst ArUco, dann Enter fuer Zangen-Erkennung (mehrfach moeglich)")
 
-    def _load_template(self) -> bool:
-        pcd = o3d.io.read_point_cloud(TEMPLATE_PATH)
-        if len(pcd.points) < 50:
-            return False
+    def _load_templates(self) -> bool:
+        self.loaded_templates = {}
+        for template_id in TEMPLATE_SCAN_LIST:
+            template_path = os.path.join(TEMPLATE_DIR, f"{template_id}.pcd")
+            try:
+                pcd = o3d.io.read_point_cloud(template_path)
+            except Exception as exc:
+                self.get_logger().warn(f"Template konnte nicht geladen werden: {template_id}: {exc}")
+                continue
 
-        pcd = pcd.voxel_down_sample(VOXEL_SIZE_TEMPLATE)
-        pts = np.asarray(pcd.points, dtype=np.float64)
-        centroid = pts.mean(axis=0)
-        self.template_points = pts - centroid
-        self.template_point_count = len(self.template_points)
-        self.template_pca_extent = self._pca_extent(self.template_points)
+            if len(pcd.points) < 50:
+                self.get_logger().warn(f"Template zu klein/ungueltig: {template_id}")
+                continue
 
-        self.get_logger().info(f"Template geladen: {len(self.template_points)} Punkte (zentriert)")
-        return True
+            pcd = pcd.voxel_down_sample(VOXEL_SIZE_TEMPLATE)
+            pts = np.asarray(pcd.points, dtype=np.float64)
+            centroid = pts.mean(axis=0)
+            template_points = pts - centroid
+            template_point_count = len(template_points)
+            template_pca_extent = self._pca_extent(template_points)
+
+            self.loaded_templates[template_id] = (
+                template_points,
+                template_point_count,
+                template_pca_extent,
+            )
+            self.get_logger().info(f"Template geladen: {template_id} ({template_point_count} Punkte)")
+
+        self.get_logger().info(f"Templates aktiv: {list(self.loaded_templates.keys())}")
+        return len(self.loaded_templates) > 0
 
     def _pca_extent(self, points: np.ndarray) -> np.ndarray:
         if len(points) < 10:
@@ -445,22 +466,37 @@ class D405ArucoThenToolOnceNode(Node):
             return
         roi_points, p_marker, r_marker = crop_result
 
-        result, best_fit, best_rmse = self._match_roi_points(roi_points)
-        if np.isfinite(best_rmse):
-            self.get_logger().info(
-                f"ICP Bestwert im Scan: fitness={best_fit:.4f} (min {MIN_SEARCH_FITNESS:.2f}), "
-                f"rmse={best_rmse:.4f} (max {MAX_SEARCH_RMSE:.3f})"
-            )
-        else:
-            self.get_logger().info(
-                f"ICP Bestwert im Scan: fitness={best_fit:.4f} (min {MIN_SEARCH_FITNESS:.2f}), "
-                "rmse=n/a"
+        best_result = None
+        best_template_id = ""
+        best_fit = 0.0
+        best_rmse = float("inf")
+
+        for template_id, (template_points, template_point_count, template_pca_extent) in self.loaded_templates.items():
+            result, fit, rmse = self._match_roi_points_for_template(
+                roi_points,
+                template_points,
+                template_point_count,
+                template_pca_extent,
             )
 
-        if result is None:
+            if np.isfinite(rmse):
+                self.get_logger().info(f"  Template '{template_id}': fitness={fit:.4f}, rmse={rmse:.4f}")
+            else:
+                self.get_logger().info(f"  Template '{template_id}': fitness={fit:.4f}, rmse=n/a")
+
+            if result is None:
+                continue
+
+            if (fit > best_fit) or (abs(fit - best_fit) < 1e-6 and rmse < best_rmse):
+                best_result = result
+                best_fit = fit
+                best_rmse = rmse
+                best_template_id = template_id
+
+        if best_result is None:
             return
 
-        translation, rotation, _, _, _ = result
+        translation, rotation, _, _, _ = best_result
 
         # Direkte Berechnung marker->detected im Pointcloud-Frame.
         r_rel = r_marker.T @ rotation
@@ -470,7 +506,7 @@ class D405ArucoThenToolOnceNode(Node):
 
         pose = PoseStamped()
         pose.header.stamp = self.get_clock().now().to_msg()
-        pose.header.frame_id = f"{MARKER_FRAME}|{TEMPLATE_ID}"
+        pose.header.frame_id = f"{MARKER_FRAME}|{best_template_id}"
         pose.pose.position.x = float(p_rel[0])
         pose.pose.position.y = float(p_rel[1])
         pose.pose.position.z = float(p_rel[2])
@@ -488,7 +524,7 @@ class D405ArucoThenToolOnceNode(Node):
             f"qx={q.x:.4f}, qy={q.y:.4f}, qz={q.z:.4f}, qw={q.w:.4f}"
         )
         self.get_logger().info(
-            f"Template in frame_id integriert: {pose.header.frame_id}"
+            f"Template gewaehlt: {best_template_id} (fitness={best_fit:.4f}, rmse={best_rmse:.4f})"
         )
 
         self.scan_active = False
@@ -554,7 +590,10 @@ class D405ArucoThenToolOnceNode(Node):
         candidates.sort(key=lambda c: len(c.points), reverse=True)
         return candidates[:MAX_CLUSTERS_TO_TEST]
 
-    def _icp_for_candidate(self, candidate_points):
+    def _icp_for_candidate(self, candidate_points: np.ndarray, template_points: np.ndarray):
+        if template_points is None or len(template_points) == 0:
+            return None
+
         centroid = candidate_points.mean(axis=0)
         r0 = pca_rotation(candidate_points)
 
@@ -569,7 +608,7 @@ class D405ArucoThenToolOnceNode(Node):
             init[:3, 3] = centroid
 
             source = o3d.geometry.PointCloud()
-            source.points = o3d.utility.Vector3dVector(self.template_points)
+            source.points = o3d.utility.Vector3dVector(template_points)
             target = o3d.geometry.PointCloud()
             target.points = o3d.utility.Vector3dVector(candidate_points)
 
@@ -593,7 +632,13 @@ class D405ArucoThenToolOnceNode(Node):
             return None
         return best_tf, best_fit, best_rmse
 
-    def _match_roi_points(self, roi_points):
+    def _match_roi_points_for_template(
+        self,
+        roi_points: np.ndarray,
+        template_points: np.ndarray,
+        template_point_count: int,
+        template_pca_extent: np.ndarray,
+    ):
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(roi_points)
         pcd = pcd.voxel_down_sample(VOXEL_SIZE_SCENE)
@@ -631,19 +676,19 @@ class D405ArucoThenToolOnceNode(Node):
                 reject_small += 1
                 continue
 
-            point_ratio = len(cand_points) / float(max(1, self.template_point_count))
+            point_ratio = len(cand_points) / float(max(1, template_point_count))
             if point_ratio < POINT_COUNT_RATIO_MIN or point_ratio > POINT_COUNT_RATIO_MAX:
                 reject_point_ratio += 1
                 continue
 
             cand_extent = self._pca_extent(cand_points)
-            extent_ratio = cand_extent / self.template_pca_extent
+            extent_ratio = cand_extent / template_pca_extent
             if np.any(extent_ratio < PCA_EXTENT_RATIO_MIN) or np.any(extent_ratio > PCA_EXTENT_RATIO_MAX):
                 reject_extent += 1
                 continue
 
             icp_attempts += 1
-            result = self._icp_for_candidate(cand_points)
+            result = self._icp_for_candidate(cand_points, template_points)
             if result is None:
                 continue
 
@@ -660,7 +705,7 @@ class D405ArucoThenToolOnceNode(Node):
                 if len(cand_points) < MIN_CLUSTER_POINTS:
                     continue
                 icp_attempts += 1
-                result = self._icp_for_candidate(cand_points)
+                result = self._icp_for_candidate(cand_points, template_points)
                 if result is None:
                     continue
                 tf_mat, fit, rmse = result

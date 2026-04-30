@@ -22,6 +22,7 @@ echo " docker exec -it d405_test_container bash
 python3 /workspace/src/custom_packages/custom_code/template_matching_roi_icp_node_ondemand.py"
 echo " docker exec -it d405_test_container bash
 rviz2 -d /workspace/src/custom_packages/custom_code/config.rviz"
+echo "python3 /workspace/src/custom_packages/custom_code/template_scan_grasp_point_d405.py"
 
 
 # Check if 'docker compose' is available, otherwise try 'docker-compose'

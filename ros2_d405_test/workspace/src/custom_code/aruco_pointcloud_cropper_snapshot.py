@@ -138,7 +138,7 @@ class ArucoPointCloudCropperSnapshot(Node):
             print("Gib den XYZ Crop-Bereich relativ zum Marker ein:")
             print("Format: x_min x_max y_min y_max z_min z_max")
             print("Einheit: Meter")
-            print("Beispiel: -0.15 0.15 -0.10 0.10 0.0 0.30")
+            print("Beispiel: -0.03 0.38 -0.22 0.03 0.008 0.03")
             print("RViz-Achsenfarben: +X = Rot, +Y = Gruen, +Z = Blau")
             print("-" * 70)
             print("Eingabe (oder 'c' zum Abbrechen):")
