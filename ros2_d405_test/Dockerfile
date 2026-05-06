@@ -32,7 +32,7 @@ RUN apt-get -o Acquire::ForceIPv4=true update && apt-get -o Acquire::ForceIPv4=t
     && rm -rf /var/lib/apt/lists/*
 
 # 4) Librealsense bauen (Notwendig für Jetson & D405 Support)
-RUN git clone https://github.com/IntelRealSense/librealsense.git /tmp/librealsense && \
+RUN git clone --depth 1 https://github.com/IntelRealSense/librealsense.git /tmp/librealsense && \
     cd /tmp/librealsense && \
     mkdir -p build && cd build && \
     cmake .. \

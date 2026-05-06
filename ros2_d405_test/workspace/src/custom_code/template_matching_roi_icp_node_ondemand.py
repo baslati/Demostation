@@ -10,6 +10,7 @@ Ablauf:
 """
 
 import os
+os.environ.setdefault("RCUTILS_CONSOLE_OUTPUT_FORMAT", "[{severity}]: {message}")
 import threading
 import time
 from typing import Dict, Optional, Tuple
@@ -54,6 +55,7 @@ TEMPLATE_DIR = "/workspace/src/custom_packages/custom_code/templates"
 TEMPLATE_SCAN_LIST = [
     "cropv1_clean_direction",
     "kurzv3_clean_direction",
+    "langv1_clean_direction",
 ]
 CROP_BOUNDS_MARKER = (-0.03, 0.38, -0.22, 0.03, 0.008, 0.03)
 
@@ -62,9 +64,6 @@ MAX_RAW_POINTS = 60000
 VOXEL_SIZE_SCENE = 0.0025
 VOXEL_SIZE_TEMPLATE = 0.0025
 
-PLANE_DISTANCE_THRESHOLD = 0.0015
-PLANE_RANSAC_ITER = 200
-PLANE_MIN_KEEP_POINTS = 120
 
 CLUSTER_EPS = 0.012
 CLUSTER_MIN_POINTS = 30
@@ -76,10 +75,10 @@ ICP_MAX_ITER = 60
 MIN_SEARCH_FITNESS = 0.80
 MAX_SEARCH_RMSE = 0.10
 
-POINT_COUNT_RATIO_MIN = 0.35
-POINT_COUNT_RATIO_MAX = 1.80
-PCA_EXTENT_RATIO_MIN = 0.45
-PCA_EXTENT_RATIO_MAX = 1.90
+POINT_COUNT_RATIO_MIN = 0.10
+POINT_COUNT_RATIO_MAX = 2.50
+PCA_EXTENT_RATIO_MIN = 0.50
+PCA_EXTENT_RATIO_MAX = 2.00
 
 DICT_MAP = {
     "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
@@ -479,10 +478,8 @@ class D405ArucoThenToolOnceNode(Node):
                 template_pca_extent,
             )
 
-            if np.isfinite(rmse):
-                self.get_logger().info(f"  Template '{template_id}': fitness={fit:.4f}, rmse={rmse:.4f}")
-            else:
-                self.get_logger().info(f"  Template '{template_id}': fitness={fit:.4f}, rmse=n/a")
+            rmse_str = f"{rmse:.4f}" if np.isfinite(rmse) else "n/a"
+            self.get_logger().info(f"  {template_id}: fitness={fit:.4f}, rmse={rmse_str}")
 
             if result is None:
                 continue
@@ -630,7 +627,21 @@ class D405ArucoThenToolOnceNode(Node):
 
         if best_tf is None:
             return None
-        return best_tf, best_fit, best_rmse
+
+        # Reverse fitness: how well does the template cover the candidate?
+        # Catches the case where a short template fits into a larger object.
+        source = o3d.geometry.PointCloud()
+        source.points = o3d.utility.Vector3dVector(template_points)
+        target = o3d.geometry.PointCloud()
+        target.points = o3d.utility.Vector3dVector(candidate_points)
+        t_inv = np.linalg.inv(best_tf)
+        rev = o3d.pipelines.registration.evaluate_registration(
+            target, source, ICP_THRESHOLD, t_inv
+        )
+        # Combined: geometric mean of forward and reverse fitness
+        combined_fit = float(np.sqrt(best_fit * max(rev.fitness, 1e-6)))
+
+        return best_tf, combined_fit, best_rmse
 
     def _match_roi_points_for_template(
         self,
@@ -648,20 +659,7 @@ class D405ArucoThenToolOnceNode(Node):
             )
             return None, 0.0, float("inf")
 
-        pcd_for_match = pcd
-        try:
-            _, inliers = pcd.segment_plane(
-                distance_threshold=PLANE_DISTANCE_THRESHOLD,
-                ransac_n=3,
-                num_iterations=PLANE_RANSAC_ITER,
-            )
-            non_plane = pcd.select_by_index(inliers, invert=True)
-            if len(non_plane.points) >= PLANE_MIN_KEEP_POINTS:
-                pcd_for_match = non_plane
-        except Exception:
-            pass
-
-        candidates = self._cluster_candidates(pcd_for_match)
+        candidates = self._cluster_candidates(pcd)
         best_tf = None
         best_fit = 0.0
         best_rmse = float("inf")
@@ -714,17 +712,15 @@ class D405ArucoThenToolOnceNode(Node):
                     best_rmse = rmse
                     best_tf = tf_mat
 
-            self.get_logger().info(
-                "ICP Diagnose: Fallback ohne Shape-Filter aktiv "
-                f"(Kandidaten={len(candidates)}, ICP-Versuche={icp_attempts})"
-            )
+            self.get_logger().warn("ICP: Fallback ohne Shape-Filter")
 
-        self.get_logger().info(
-            "ICP Diagnose: "
-            f"roi_raw={len(roi_points)}, roi_ds={len(pcd.points)}, match_pts={len(pcd_for_match.points)}, "
-            f"kandidaten={len(candidates)}, icp_versuche={icp_attempts}, "
-            f"verworfen_small={reject_small}, verworfen_ratio={reject_point_ratio}, verworfen_extent={reject_extent}"
-        )
+        self.get_logger().info(f"ROI: raw={len(roi_points)}, ds={len(pcd.points)}")
+        rejects = []
+        if reject_small:       rejects.append(f"small={reject_small}")
+        if reject_point_ratio: rejects.append(f"ratio={reject_point_ratio}")
+        if reject_extent:      rejects.append(f"extent={reject_extent}")
+        if rejects:
+            self.get_logger().info(f"ICP verworfen: {', '.join(rejects)}")
 
         if best_tf is None:
             return None, best_fit, best_rmse

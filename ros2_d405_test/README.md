@@ -21,7 +21,7 @@ Dieses Verzeichnis enthaelt eine Docker-Umgebung, um die Realsense D405 Kamera a
 docker exec -it d405_test_container bash
 
 ```bash
-ros2 launch realsense2_camera rs_launch.py pointcloud.enable:=true align_depth.enable:=true enable_sync:=true
+ros2 launch realsense2_camera rs_launch.py pointcloud.enable:=true align_depth.enable:=true enable_sync:=true json_file_path:=/workspace/src/custom_packages/custom_code/v2.json decimation_filter.enable:=true spatial_filter.enable:=true temporal_filter.enable:=true hole_filling_filter.enable:=true
 ```
 
 3. In weiteren Container-Terminals die einzelnen Programme starten.
