@@ -53,7 +53,7 @@ MIN_CLOUD_STAMP_AFTER_SCAN_SEC = 0.10
 # Template / ROI / ICP
 TEMPLATE_DIR = "/workspace/src/custom_packages/custom_code/templates"
 TEMPLATE_SCAN_LIST = [
-    "cropv1_clean_direction",
+    "breitv1_clean_direction",
     "kurzv3_clean_direction",
     "langv1_clean_direction",
 ]
@@ -75,10 +75,10 @@ ICP_MAX_ITER = 60
 MIN_SEARCH_FITNESS = 0.80
 MAX_SEARCH_RMSE = 0.10
 
-POINT_COUNT_RATIO_MIN = 0.10
-POINT_COUNT_RATIO_MAX = 2.50
-PCA_EXTENT_RATIO_MIN = 0.50
-PCA_EXTENT_RATIO_MAX = 2.00
+POINT_COUNT_RATIO_MIN = 0.05
+POINT_COUNT_RATIO_MAX = 5.00
+PCA_EXTENT_RATIO_MIN = 0.30
+PCA_EXTENT_RATIO_MAX = 3.00
 
 DICT_MAP = {
     "DICT_4X4_50": cv2.aruco.DICT_4X4_50,

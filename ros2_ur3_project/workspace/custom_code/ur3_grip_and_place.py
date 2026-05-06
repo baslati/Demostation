@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
-UR3 Top-Down Grip and Fixed Place from Pose
+UR3 Top-Down Grip and Template-Based Place
 
 Ablauf:
-1) Wartet auf Pose auf /tool_target_pose (Frame: aruco_0)
+1) Wartet auf Pose auf /tool_target_pose (Frame: aruco_0|<template_id>)
 2) Transformiert Pose in base_link
 3) Faehrt zuerst 2 cm ueber die Greifpose (Hover)
 4) Faellt von oben vertikal auf die Greifpose ab
 5) Faehrt 4 cm in Marker-Y-Richtung (XY-Ebene)
 6) Greifer schliessen, Werkzeug aufnehmen
-7) Faehrt zu festem Ablagepunkt (nicht gleiche Stelle, nicht Tischmitte)
-8) Legt ab und zieht wieder nach oben
-9) Optional zur Home-Pose zurueck
+7) Faehrt zu templatespezifischem Ablagepunkt
+8) Legt ab, zieht in Ablagerichtung zurueck (template-spezifische Distanz)
+9) Zieht vertikal nach oben (template-spezifische Distanz)
+10) Optional zur Home-Pose zurueck
 """
 
 import math
@@ -42,29 +43,65 @@ from trajectory_msgs.msg import JointTrajectory
 
 TARGET_TOPIC = "/tool_target_pose"
 
-DEFAULT_TEMPLATE_ID = "cropv1_clean_direction"
+DEFAULT_TEMPLATE_ID = "breitv1_clean_direction"
 TEMPLATE_GRASP_OFFSETS: Dict[str, Dict[str, Tuple[float, float, float, float]]] = {
     "cropv1_clean_direction": {
         "translation_xyz_m": (-0.001352, +0.087173, -0.014160),
         "translation_sign_xyz": (+1.0, -1.0, +1.0),
         "rotation_quat_xyzw": (+0.998850, -0.035604, -0.006631, +0.031408),
     },
-#y +0.055 x vorher:-0.002455
     "kurzv3_clean_direction": {
         "translation_xyz_m": (0.005, +0.09, -0.011746),
         "translation_sign_xyz": (+1.0, -1.0, +1.0),
-        "rotation_quat_xyzw": (+0.999909, +0.001677, -0.011609, +0.006670)
+        "rotation_quat_xyzw": (+0.999909, +0.001677, -0.011609, +0.006670),
     },
     "breitv1_clean_direction": {
-        "translation_xyz_m": (0.0, +0.091391, -0.008295), 
+        "translation_xyz_m": (0.0, +0.091391, -0.008295),
         "translation_sign_xyz": (+1.0, -1.0, +1.0),
-        "rotation_quat_xyzw": (+0.999901, -0.009287, -0.010443, +0.001564)},
-#y 0.113 voher 0.0789; x + statt -, jetzt 0 
+        "rotation_quat_xyzw": (+0.999901, -0.009287, -0.010443, +0.001564),
+    },
     "langv1_clean_direction": {
-        "translation_xyz_m": (0.00, +0.113, -0.010080), 
+        "translation_xyz_m": (0.00, +0.113, -0.010080),
         "translation_sign_xyz": (+1.0, -1.0, +1.0),
-        "rotation_quat_xyzw": (+0.999927, -0.007771, -0.000057, +0.009240)},
+        "rotation_quat_xyzw": (+0.999927, -0.007771, -0.000057, +0.009240),
+    },
 }
+
+# Ablagekonfiguration pro Template.
+# place_x/y/z: Ablageposition im Marker-/Tischframe (m)
+# place_yaw:   Ausrichtung beim Ablegen (rad)
+# post_place_forward_m: Rueckwaertsbewegung entlang Ablage-Y nach dem Oeffnen des Greifers
+# post_place_retreat_m: Vertikaler Rueckzug danach
+#
+# Erweiterung fuer spaeter: Eintrag "place_mode": "holder" aktiviert eine
+# andere Bewegungssequenz (z.B. Einsetzen in Halterung). Aktuell nur "table".
+TEMPLATE_PLACE_CONFIG: Dict[str, Dict] = {
+    "breitv1_clean_direction": {
+        "place_x": 0.10,
+        "place_y": -0.06,
+        "place_z": 0.0,
+        "place_yaw": math.pi,
+        "post_place_forward_m": 0.02,
+        "post_place_retreat_m": 0.02,
+    },
+    "kurzv3_clean_direction": {
+        "place_x": 0.20,
+        "place_y": -0.06,
+        "place_z": 0.0,
+        "place_yaw": math.pi,
+        "post_place_forward_m": 0.02,
+        "post_place_retreat_m": 0.02,
+    },
+    "langv1_clean_direction": {
+        "place_x": 0.20,
+        "place_y": -0.06,
+        "place_z": 0.0,
+        "place_yaw": math.pi/2,
+        "post_place_forward_m": 0.02,
+        "post_place_retreat_m": 0.02,
+    },
+}
+DEFAULT_PLACE_CONFIG_KEY = "breitv1_clean_direction"
 
 SERVICE_TIMEOUT_SEC = 8.0
 ACTION_TIMEOUT_SEC = 30.0
@@ -75,12 +112,9 @@ STARTUP_MOVE_HOME = True
 HOLD_SECONDS = 2.0
 OPEN_SECONDS = 2.0
 
-# Gewuenschte Sequenz
 HOVER_ABOVE_GRIP_M = 0.03
 AXIS_SHIFT_MARKER_Y_M = 0.05
 GRIP_SHIFT_MARKER_Y_M = 0.01
-POST_PLACE_RETREAT_M = 0.02
-POST_PLACE_FORWARD_MARKER_Y_M = 0.02
 
 MIN_TARGET_Z_IN_BASE_M = 0.0032
 PLANNING_Z_RETRY_STEPS_M = (0.0, 0.008, 0.015)
@@ -105,18 +139,8 @@ HOME_TABLE_Y_M = -0.04
 HOME_TABLE_Z_M = 0.14
 HOME_YAW_RAD = math.pi
 
-# Ablagepunkt = Kamera-/Home-Position in XY, aber auf Tischhoehe in Z.
-PLACE_TABLE_X_M = 0.20
-PLACE_TABLE_Y_M = -0.06
-PLACE_TABLE_Z_M = 0.0
-
-# Ablageausrichtung: gerade/fix statt uebernommene Werkzeug-Yaw.
-PLACE_YAW_RAD = math.pi
-
-# Nach dem Greifen zuerst vertikal anheben, dann zur Ablage fahren.
 POST_GRIP_LIFT_BEFORE_PLACE_M = 0.02
 
-# Schutz gegen Ablage in Tischmitte und am gleichen Ort.
 TABLE_CENTER_X_M = 0.0
 TABLE_CENTER_Y_M = 0.0
 PLACE_MIN_DIST_FROM_CENTER_M = 0.08
@@ -130,7 +154,6 @@ FJT_ERROR_TEXT = {
     -4: "PATH_TOLERANCE_VIOLATED",
     -5: "GOAL_TOLERANCE_VIOLATED",
 }
-
 
 
 def rpy_to_quat(roll: float, pitch: float, yaw: float) -> Quaternion:
@@ -222,12 +245,12 @@ def split_frame_and_template(frame_id: str) -> Tuple[str, str]:
     return base_frame, template_id
 
 
-class UR3TopDownGripAndPlaceNode(Node):
+class UR3GripAndPlaceNode(Node):
     def __init__(self) -> None:
-        super().__init__("ur3_topdown_grip_and_place_node")
+        super().__init__("ur3_grip_and_place_node")
 
         self.get_logger().info("=======================================================")
-        self.get_logger().info("  UR3 TOP-DOWN GRIP AND PLACE NODE START")
+        self.get_logger().info("  UR3 GRIP AND PLACE BY TEMPLATE NODE START")
         self.get_logger().info("=======================================================")
 
         self.group = "ur_manipulator"
@@ -276,6 +299,15 @@ class UR3TopDownGripAndPlaceNode(Node):
         self.get_logger().info("=======================================================")
         self.get_logger().info("  NODE BEREIT - WARTE AUF ZIELPOSE")
         self.get_logger().info("=======================================================")
+
+    def _get_place_config(self, template_id: str) -> Dict:
+        cfg = TEMPLATE_PLACE_CONFIG.get(template_id)
+        if cfg is None:
+            self.get_logger().warn(
+                f"[PLACE_CONFIG] Kein Eintrag fuer '{template_id}', nutze '{DEFAULT_PLACE_CONFIG_KEY}'"
+            )
+            cfg = TEMPLATE_PLACE_CONFIG[DEFAULT_PLACE_CONFIG_KEY]
+        return cfg
 
     def _apply_template_grasp_offset(self, msg: PoseStamped, template_id: str) -> PoseStamped:
         config = TEMPLATE_GRASP_OFFSETS.get(template_id)
@@ -505,8 +537,8 @@ class UR3TopDownGripAndPlaceNode(Node):
             TABLE_ORIGIN_IN_BASE_Z_M + (TABLE_TO_BASE_Z_SIGN * z_table),
         ], dtype=np.float64)
 
-    def _get_place_target_base(self) -> np.ndarray:
-        return self._table_to_base(PLACE_TABLE_X_M, PLACE_TABLE_Y_M, PLACE_TABLE_Z_M)
+    def _get_place_target_base(self, place_cfg: Dict) -> np.ndarray:
+        return self._table_to_base(place_cfg["place_x"], place_cfg["place_y"], place_cfg["place_z"])
 
     def _validate_place_target(self, pick_base: np.ndarray, place_base: np.ndarray) -> None:
         center_base = self._table_to_base(TABLE_CENTER_X_M, TABLE_CENTER_Y_M, 0.0)
@@ -588,6 +620,8 @@ class UR3TopDownGripAndPlaceNode(Node):
     def _process_target_pose(self, msg: PoseStamped) -> None:
         try:
             base_frame, template_id = split_frame_and_template(msg.header.frame_id)
+            place_cfg = self._get_place_config(template_id)
+
             msg_grip = self._apply_template_grasp_offset(msg, template_id)
             msg_grip.header.frame_id = base_frame
 
@@ -601,7 +635,7 @@ class UR3TopDownGripAndPlaceNode(Node):
 
             target_yaw = yaw_from_quat(q_base) + TOOL_YAW_OFFSET
             q_target = rpy_to_quat(GRIPPER_FIXED_ROLL, GRIPPER_FIXED_PITCH, target_yaw)
-            q_place = rpy_to_quat(GRIPPER_FIXED_ROLL, GRIPPER_FIXED_PITCH, PLACE_YAW_RAD + TOOL_YAW_OFFSET)
+            q_place = rpy_to_quat(GRIPPER_FIXED_ROLL, GRIPPER_FIXED_PITCH, place_cfg["place_yaw"] + TOOL_YAW_OFFSET)
 
             r_base_marker = quat_to_rotmat(q_base.x, q_base.y, q_base.z, q_base.w)
             marker_y_in_base = r_base_marker[:, 1]
@@ -611,7 +645,6 @@ class UR3TopDownGripAndPlaceNode(Node):
                 raise RuntimeError("Marker +Y kann nicht in XY-Ebene projiziert werden (norm~0)")
             marker_y_xy /= norm_xy
 
-            # Griffpunkt 1cm in Zangenrichtung nach vorne verschieben.
             if abs(GRIP_SHIFT_MARKER_Y_M) > 1e-9:
                 grip_delta_xy = marker_y_xy * GRIP_SHIFT_MARKER_Y_M
                 p_grip[0] += grip_delta_xy[0]
@@ -659,7 +692,7 @@ class UR3TopDownGripAndPlaceNode(Node):
             time.sleep(HOLD_SECONDS)
             self.get_logger().info("[GRIPPER] Geschlossen und gehalten")
 
-            # 5) Nach dem Greifen erst vertikal nach oben.
+            # 5) Nach dem Greifen erst vertikal nach oben
             p_after_grip_up = p_shift.copy()
             p_after_grip_up[2] += POST_GRIP_LIFT_BEFORE_PLACE_M
             self.get_logger().info(
@@ -669,19 +702,20 @@ class UR3TopDownGripAndPlaceNode(Node):
             p_after_grip_up[2] = z_after_grip_up
             self.execute_trajectory(jt_after_grip_up)
 
-            # 6) Ablagepunkt (naeher Tischmitte, weiterhin mit Abstandspruefung)
-            p_place = self._get_place_target_base()
+            # 6) Ablagepunkt (template-spezifisch)
+            p_place = self._get_place_target_base(place_cfg)
             if p_place[2] < MIN_TARGET_Z_IN_BASE_M:
                 p_place[2] = MIN_TARGET_Z_IN_BASE_M
             self._validate_place_target(p_shift, p_place)
 
             self.get_logger().info(
                 "[PLACE_TARGET] "
-                f"table=({PLACE_TABLE_X_M:.4f}, {PLACE_TABLE_Y_M:.4f}, {PLACE_TABLE_Z_M:.4f}) -> "
-                f"base=({p_place[0]:.4f}, {p_place[1]:.4f}, {p_place[2]:.4f}), yaw={PLACE_YAW_RAD + TOOL_YAW_OFFSET:.3f}"
+                f"table=({place_cfg['place_x']:.4f}, {place_cfg['place_y']:.4f}, {place_cfg['place_z']:.4f}) -> "
+                f"base=({p_place[0]:.4f}, {p_place[1]:.4f}, {p_place[2]:.4f}), "
+                f"yaw={place_cfg['place_yaw'] + TOOL_YAW_OFFSET:.3f}  [template={template_id}]"
             )
 
-            # 7) In XY-Ebene zur Ablage verfahren und dabei bereits auf Ablageausrichtung drehen.
+            # 7) In XY-Ebene zur Ablage verfahren und dabei bereits auf Ablageausrichtung drehen
             p_place_plane = p_place.copy()
             p_place_plane[2] = p_after_grip_up[2]
             self.get_logger().info("[PLACE_MOVE_ALIGN] Verfahre in Ebene zur Ablage und richte aus")
@@ -689,20 +723,20 @@ class UR3TopDownGripAndPlaceNode(Node):
             p_place_plane[2] = z_place_plane
             self.execute_trajectory(jt_place_plane)
 
-            # 8) Direkt vertikal auf Ablagehoehe.
+            # 8) Direkt vertikal auf Ablagehoehe
             self.get_logger().info("[PLACE_DESCEND] Senke direkt auf Ablagehoehe")
             jt_place_desc, z_place_desc = self._plan_with_retry(p_place, q_place, "PLACE_DESCEND")
             p_place[2] = z_place_desc
             self.execute_trajectory(jt_place_desc)
 
-            # 10) Ablegen
+            # 9) Ablegen
             self.get_logger().info("[GRIPPER] Oeffnen...")
             if not set_tool_do(self, 16, 0.0):
                 raise RuntimeError("Greifer CLOSE Release (Pin 16=0) fehlgeschlagen")
             gripper(self, close=False, pulse=True, pulse_time=OPEN_SECONDS)
             self.get_logger().info("[GRIPPER] Offen")
 
-            # 11) Nach dem Ablegen in Ablageausrichtung nach vorne herausfahren.
+            # 10) In Ablageausrichtung zurueckfahren (template-spezifische Distanz)
             r_base_place = quat_to_rotmat(q_place.x, q_place.y, q_place.z, q_place.w)
             place_y_in_base = r_base_place[:, 1]
             place_y_xy = np.array([place_y_in_base[0], place_y_in_base[1], 0.0], dtype=np.float64)
@@ -711,22 +745,24 @@ class UR3TopDownGripAndPlaceNode(Node):
                 raise RuntimeError("Ablage +Y kann nicht in XY-Ebene projiziert werden (norm~0)")
             place_y_xy /= place_norm_xy
 
+            post_forward = place_cfg["post_place_forward_m"]
             p_forward = p_place.copy()
-            forward_delta_xy = place_y_xy * (-POST_PLACE_FORWARD_MARKER_Y_M)
+            forward_delta_xy = place_y_xy * (-post_forward)
             p_forward[0] += forward_delta_xy[0]
             p_forward[1] += forward_delta_xy[1]
             self.get_logger().info(
-                f"[POST_PLACE_FORWARD] entlang Ablage +Y={POST_PLACE_FORWARD_MARKER_Y_M:.3f}m, "
+                f"[POST_PLACE_FORWARD] entlang Ablage +Y={post_forward:.3f}m, "
                 f"delta_xy=({forward_delta_xy[0]:+.4f}, {forward_delta_xy[1]:+.4f})"
             )
             jt_forward, z_forward = self._plan_with_retry(p_forward, q_place, "POST_PLACE_FORWARD")
             p_forward[2] = z_forward
             self.execute_trajectory(jt_forward)
 
-            # 12) Danach vertikal nach oben wegziehen.
+            # 11) Vertikal nach oben wegziehen (template-spezifische Distanz)
+            post_retreat = place_cfg["post_place_retreat_m"]
             p_retreat = p_forward.copy()
-            p_retreat[2] += POST_PLACE_RETREAT_M
-            self.get_logger().info("[RETREAT] Vertikal nach oben")
+            p_retreat[2] += post_retreat
+            self.get_logger().info(f"[RETREAT] Vertikal nach oben um {post_retreat:.3f}m")
             jt_retreat, z_retreat = self._plan_with_retry(p_retreat, q_place, "PLACE_RETREAT")
             p_retreat[2] = z_retreat
             self.execute_trajectory(jt_retreat)
@@ -834,7 +870,7 @@ def gripper(node: Node, close: bool = True, pin_close: int = 16, pin_open: int =
 
 def main(args=None) -> None:
     rclpy.init(args=args)
-    node = UR3TopDownGripAndPlaceNode()
+    node = UR3GripAndPlaceNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
