@@ -96,7 +96,7 @@ TEMPLATE_PLACE_CONFIG: Dict[str, Dict] = {
         "place_x": 0.20,
         "place_y": -0.06,
         "place_z": 0.0,
-        "place_yaw": math.pi/2,
+        "place_yaw": (math.pi/2+math.pi/8),
         "post_place_forward_m": 0.02,
         "post_place_retreat_m": 0.02,
     },
@@ -627,11 +627,8 @@ class UR3GripAndPlaceNode(Node):
 
             p_base, q_base = self._target_in_base(msg_grip)
             p_grip = p_base.copy()
-            if p_grip[2] < MIN_TARGET_Z_IN_BASE_M:
-                self.get_logger().warn(
-                    f"[SAFETY] Ziel-z {p_grip[2]:.4f} unter Minimum, setze auf {MIN_TARGET_Z_IN_BASE_M:.4f}"
-                )
-                p_grip[2] = MIN_TARGET_Z_IN_BASE_M
+            p_grip[2] = 0.003
+            self.get_logger().info("[GRASP_Z] z-Wert fest auf 0.003 gesetzt")
 
             target_yaw = yaw_from_quat(q_base) + TOOL_YAW_OFFSET
             q_target = rpy_to_quat(GRIPPER_FIXED_ROLL, GRIPPER_FIXED_PITCH, target_yaw)

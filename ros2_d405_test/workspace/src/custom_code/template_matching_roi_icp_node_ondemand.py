@@ -57,7 +57,8 @@ TEMPLATE_SCAN_LIST = [
     "kurzv3_clean_direction",
     "langv1_clean_direction",
 ]
-CROP_BOUNDS_MARKER = (-0.03, 0.38, -0.22, 0.03, 0.008, 0.03)
+CROP_BOUNDS_MARKER = (-0.03, 0.38, -0.22, 0.03, 0.01, 0.03)
+#z von 0.008 auf 0.013
 
 MATCH_INTERVAL = 0.25
 MAX_RAW_POINTS = 60000
@@ -72,7 +73,7 @@ MAX_CLUSTERS_TO_TEST = 4
 
 ICP_THRESHOLD = 0.0075
 ICP_MAX_ITER = 60
-MIN_SEARCH_FITNESS = 0.80
+MIN_SEARCH_FITNESS = 0.95
 MAX_SEARCH_RMSE = 0.10
 
 POINT_COUNT_RATIO_MIN = 0.05
@@ -552,20 +553,31 @@ class D405ArucoThenToolOnceNode(Node):
             if marker_pos is None or marker_rot is None:
                 return None
 
-        x_min, x_max, y_min, y_max, z_min, z_max = CROP_BOUNDS_MARKER
+        x_min, x_max, y_min, y_max, _, z_max = CROP_BOUNDS_MARKER
         points_rel = points - marker_pos
         points_marker = points_rel @ marker_rot.T
 
-        mask = (
-            (points_marker[:, 0] >= x_min)
-            & (points_marker[:, 0] <= x_max)
-            & (points_marker[:, 1] >= y_min)
-            & (points_marker[:, 1] <= y_max)
-            & (points_marker[:, 2] >= z_min)
-            & (points_marker[:, 2] <= z_max)
-        )
+        z_min = 0.004
+        roi = np.empty((0, 3), dtype=np.float64)
+        while z_min < z_max:
+            mask = (
+                (points_marker[:, 0] >= x_min)
+                & (points_marker[:, 0] <= x_max)
+                & (points_marker[:, 1] >= y_min)
+                & (points_marker[:, 1] <= y_max)
+                & (points_marker[:, 2] >= z_min)
+                & (points_marker[:, 2] <= z_max)
+            )
+            roi = points[mask]
+            if len(roi) <= 10000:
+                break
+            self.get_logger().info(
+                f"[ROI_Z_ADJ] {len(roi)} Punkte > 15000, z_min {z_min:.3f} -> {z_min + 0.002:.3f}"
+            )
+            z_min += 0.001
 
-        roi = points[mask]
+        self.get_logger().info(f"[ROI_Z_ADJ] Verwende z_min={z_min:.3f}, ROI-Punkte={len(roi)}")
+
         if len(roi) < MIN_CLUSTER_POINTS:
             return None
         return roi, marker_pos, marker_rot
