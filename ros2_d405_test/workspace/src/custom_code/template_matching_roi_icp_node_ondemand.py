@@ -58,7 +58,9 @@ TEMPLATE_SCAN_LIST = [
     "langv1_clean_direction",
 ]
 CROP_BOUNDS_MARKER = (-0.03, 0.38, -0.22, 0.03, 0.01, 0.03)
-#z von 0.008 auf 0.013
+ROI_Z_ADJUST_START_M = 0.004
+ROI_Z_ADJUST_STEP_M = 0.001
+ROI_Z_MAX_POINTS = 10000
 
 MATCH_INTERVAL = 0.25
 MAX_RAW_POINTS = 60000
@@ -557,7 +559,7 @@ class D405ArucoThenToolOnceNode(Node):
         points_rel = points - marker_pos
         points_marker = points_rel @ marker_rot.T
 
-        z_min = 0.004
+        z_min = ROI_Z_ADJUST_START_M
         roi = np.empty((0, 3), dtype=np.float64)
         while z_min < z_max:
             mask = (
@@ -569,12 +571,12 @@ class D405ArucoThenToolOnceNode(Node):
                 & (points_marker[:, 2] <= z_max)
             )
             roi = points[mask]
-            if len(roi) <= 10000:
+            if len(roi) <= ROI_Z_MAX_POINTS:
                 break
             self.get_logger().info(
-                f"[ROI_Z_ADJ] {len(roi)} Punkte > 15000, z_min {z_min:.3f} -> {z_min + 0.002:.3f}"
+                f"[ROI_Z_ADJ] {len(roi)} Punkte > {ROI_Z_MAX_POINTS}, z_min {z_min:.3f} -> {z_min + ROI_Z_ADJUST_STEP_M:.3f}"
             )
-            z_min += 0.001
+            z_min += ROI_Z_ADJUST_STEP_M
 
         self.get_logger().info(f"[ROI_Z_ADJ] Verwende z_min={z_min:.3f}, ROI-Punkte={len(roi)}")
 

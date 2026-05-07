@@ -51,7 +51,7 @@ TEMPLATE_GRASP_OFFSETS: Dict[str, Dict[str, Tuple[float, float, float, float]]] 
         "rotation_quat_xyzw": (+0.998850, -0.035604, -0.006631, +0.031408),
     },
     "kurzv3_clean_direction": {
-        "translation_xyz_m": (0.005, +0.09, -0.011746),
+        "translation_xyz_m": (0.005, +0.08, -0.011746),
         "translation_sign_xyz": (+1.0, -1.0, +1.0),
         "rotation_quat_xyzw": (+0.999909, +0.001677, -0.011609, +0.006670),
     },
@@ -109,8 +109,8 @@ IK_SERVICE_TIMEOUT_SEC = 20.0
 JOINT_STATE_WAIT_SEC = 10.0
 STARTUP_MOVE_HOME = True
 
-HOLD_SECONDS = 2.0
-OPEN_SECONDS = 2.0
+HOLD_SECONDS = 0.5
+OPEN_SECONDS = 0.5
 
 HOVER_ABOVE_GRIP_M = 0.03
 AXIS_SHIFT_MARKER_Y_M = 0.05
