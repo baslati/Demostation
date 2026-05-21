@@ -19,24 +19,7 @@ echo "Zum Testen der Kamera:"
 echo "realsense-viewer"
 echo "ros2 launch realsense2_camera rs_launch.py pointcloud.enable:=true align_depth.enable:=true "
 echo "
-ros2 launch realsense2_camera rs_launch.py \
-  depth_module.depth_profile:=848x480x15 \
-  depth_module.color_profile:=848x480x15 \
-  pointcloud.enable:=true align_depth.enable:=true enable_sync:=true \
-  pointcloud.stream_filter:=2 \
-  json_file_path:=/workspace/src/custom_packages/custom_code/v1.json \
-  decimation_filter.enable:=false spatial_filter.enable:=true \
-  temporal_filter.enable:=true
-
-ros2 launch realsense2_camera rs_launch.py \
-  depth_module.depth_profile:=1280x720x5 \
-  depth_module.color_profile:=1280x720x5 \
-  pointcloud.enable:=true align_depth.enable:=true enable_sync:=true \
-  pointcloud.stream_filter:=2 \
-  json_file_path:=/workspace/src/custom_packages/custom_code/v2.json \
-  decimation_filter.enable:=true spatial_filter.enable:=true \
-  temporal_filter.enable:=true
-
+ros2 launch realsense2_camera rs_launch.py   depth_module.depth_profile:=848x480x5  depth_module.color_profile:=848x480x5  pointcloud.enable:=true align_depth.enable:=true enable_sync:=true      decimation_filter.enable:=true spatial_filter.enable:=false temporal_filter.enable:=true hole_filling_filter.enable:=false
   "
 
 echo " docker exec -it d405_test_container bash

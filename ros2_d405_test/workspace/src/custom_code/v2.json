@@ -5,7 +5,7 @@
         "product line": "D400"
     },
     "parameters": {
-        "aux-param-autoexposure-setpoint": "1000",
+        "aux-param-autoexposure-setpoint": "1800",
         "aux-param-colorcorrection1": "-0.0556641",
         "aux-param-colorcorrection10": "-0.194336",
         "aux-param-colorcorrection11": "-0.194336",
@@ -27,7 +27,7 @@
         "controls-depth-white-balance-auto": "True",
         "ignoreSAD": "0",
         "param-amplitude-factor": "0",
-        "param-autoexposure-setpoint": "1000",
+        "param-autoexposure-setpoint": "1800",
         "param-censusenablereg-udiameter": "9",
         "param-censusenablereg-vdiameter": "9",
         "param-censususize": "9",

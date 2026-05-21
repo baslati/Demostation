@@ -44,9 +44,8 @@
   <disable_collisions link1="top_plate_cube" link2="u4_cube" reason="Table" />
   <disable_collisions link1="top_plate_cube" link2="custom_cylinder" reason="Table" />
   <disable_collisions link1="top_plate_cube" link2="wbk1_cube" reason="Table" />
-  <disable_collisions link1="top_plate_cube" link2="wbk2_cube" reason="Table" />
   <disable_collisions link1="wbk1_cube" link2="wbk12_cube" reason="Table" />
-  <disable_collisions link1="wbk2_cube" link2="wbk22_cube" reason="Table" />
+  <disable_collisions link1="top_plate_cube" link2="zangenablage" reason="Table" />
 
   <disable_collisions link1="u1_cube" link2="u4_cube" reason="Table" />
 </robot>

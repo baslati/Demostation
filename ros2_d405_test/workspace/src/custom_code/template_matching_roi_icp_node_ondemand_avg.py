@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-D405 ArUco -> Enter -> Tool (einmalig, echte Single-File Loesung)
+D405 ArUco -> Enter -> Tool (Mittelwert ueber N Scans)
 
 Ablauf:
 1) Beim Start wird ArUco erkannt und als TF (aruco_0) publiziert.
 2) Nach erster ArUco-Erkennung wartet der Node auf Enter.
-3) Nach Enter wird die Zange intern (ROI + ICP) einmal erkannt und publiziert.
+3) Nach Enter werden SCAN_AVERAGE_N gueltige ICP-Ergebnisse gesammelt
+   und die gemittelte Pose publiziert.
 4) Danach wird die Zangen-Erkennung gestoppt (kein Dauerbetrieb).
 """
 
@@ -58,11 +59,12 @@ TEMPLATE_SCAN_LIST = [
     "langv1_clean_direction",
 ]
 CROP_BOUNDS_MARKER = (-0.03, 0.38, -0.22, 0.03, 0.01, 0.03)
-ROI_Z_ADJUST_START_M = 0.006
+ROI_Z_ADJUST_START_M = 0.002
 ROI_Z_ADJUST_STEP_M = 0.002
 ROI_Z_MAX_POINTS = 8000
 
-MATCH_INTERVAL = 0.25
+SCAN_AVERAGE_N = 3      # Anzahl gueltige Messungen die gemittelt werden
+MATCH_INTERVAL = 0.10   # Sekunden zwischen Messungen (3x = ~0.3s gesamt)
 MAX_RAW_POINTS = 60000
 VOXEL_SIZE_SCENE = 0.0025
 VOXEL_SIZE_TEMPLATE = 0.0025
@@ -75,13 +77,13 @@ MAX_CLUSTERS_TO_TEST = 4
 
 ICP_THRESHOLD = 0.0075
 ICP_MAX_ITER = 60
-MIN_SEARCH_FITNESS = 0.90
+MIN_SEARCH_FITNESS = 0.85
 MAX_SEARCH_RMSE = 0.10
 
-POINT_COUNT_RATIO_MIN = 0.05
-POINT_COUNT_RATIO_MAX = 5.00
-PCA_EXTENT_RATIO_MIN = 0.30
-PCA_EXTENT_RATIO_MAX = 3.00
+POINT_COUNT_RATIO_MIN = 0.40
+POINT_COUNT_RATIO_MAX = 2.50
+PCA_EXTENT_RATIO_MIN = 0.65
+PCA_EXTENT_RATIO_MAX = 1.55
 
 DICT_MAP = {
     "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
@@ -164,7 +166,7 @@ def stamp_to_seconds(stamp) -> float:
 
 class D405ArucoThenToolOnceNode(Node):
     def __init__(self) -> None:
-        super().__init__("d405_aruco_then_tool_once_node")
+        super().__init__("d405_aruco_then_tool_avg_node")
 
         self.pose_pub = self.create_publisher(PoseStamped, TARGET_TOPIC, 10)
         self.status_pub = self.create_publisher(String, STATUS_TOPIC, 10)
@@ -186,6 +188,8 @@ class D405ArucoThenToolOnceNode(Node):
         self.last_cloud_process_time = 0.0
         self.latest_cloud_msg = None
         self.cloud_lock = threading.Lock()
+        self._scan_results: list = []
+        self._locked_template_id: str = ""
 
         self.marker_position = None
         self.marker_rotation = None
@@ -220,7 +224,7 @@ class D405ArucoThenToolOnceNode(Node):
         self.detected_latch_thread = threading.Thread(target=self._detected_latch_worker, daemon=True)
         self.detected_latch_thread.start()
 
-        self.get_logger().info("Node gestartet: zuerst ArUco, dann Enter fuer Zangen-Erkennung (mehrfach moeglich)")
+        self.get_logger().info(f"Node gestartet (AVG-Modus: {SCAN_AVERAGE_N} Messungen): zuerst ArUco, dann Enter fuer Zangen-Erkennung")
 
     def _load_templates(self) -> bool:
         self.loaded_templates = {}
@@ -401,6 +405,8 @@ class D405ArucoThenToolOnceNode(Node):
         with self.detected_lock:
             self.last_detected_tf = None
 
+        self._scan_results = []
+        self._locked_template_id = ""
         self.scan_active = True
         self.scan_deadline = time.time() + TOOL_TIMEOUT_SEC
         self.scan_start_ros_time = self.get_clock().now().nanoseconds * 1e-9
@@ -475,7 +481,15 @@ class D405ArucoThenToolOnceNode(Node):
         best_fit = 0.0
         best_rmse = float("inf")
 
-        for template_id, (template_points, template_point_count, template_pca_extent) in self.loaded_templates.items():
+        # Ab Messung 2: nur noch das bereits gewählte Template verwenden.
+        if self._locked_template_id:
+            templates_to_check = {
+                self._locked_template_id: self.loaded_templates[self._locked_template_id]
+            }
+        else:
+            templates_to_check = self.loaded_templates
+
+        for template_id, (template_points, template_point_count, template_pca_extent) in templates_to_check.items():
             result, fit, rmse = self._match_roi_points_for_template(
                 roi_points,
                 template_points,
@@ -503,30 +517,72 @@ class D405ArucoThenToolOnceNode(Node):
         # Direkte Berechnung marker->detected im Pointcloud-Frame.
         r_rel = r_marker.T @ rotation
         p_rel = r_marker.T @ (translation - p_marker)
-        self._publish_detected_tf(p_rel, r_rel)
         qx, qy, qz, qw = rotmat_to_quat(r_rel)
+
+        # Nach erster Messung: Template festlegen für die Folgemessungen.
+        if not self._locked_template_id:
+            self._locked_template_id = best_template_id
+            self.get_logger().info(f"[AVG] Template festgelegt: {best_template_id}")
+
+        self._scan_results.append({
+            "p_rel": p_rel.copy(),
+            "quat": np.array([qx, qy, qz, qw], dtype=np.float64),
+            "r_rel": r_rel.copy(),
+            "template_id": best_template_id,
+            "fitness": best_fit,
+            "rmse": best_rmse,
+        })
+
+        n = len(self._scan_results)
+        self.get_logger().info(
+            f"[AVG {n}/{SCAN_AVERAGE_N}] {best_template_id} fitness={best_fit:.4f}, rmse={best_rmse:.4f} | "
+            f"x={p_rel[0]:.4f}, y={p_rel[1]:.4f}, z={p_rel[2]:.4f}"
+        )
+
+        if n < SCAN_AVERAGE_N:
+            return
+
+        # Genug Messungen gesammelt — Mittelwert berechnen.
+        avg_p = np.mean([r["p_rel"] for r in self._scan_results], axis=0)
+
+        # Quaternion-Mittelwert: Vorzeichen an erstes Ergebnis angleichen, dann normieren.
+        quats = np.array([r["quat"] for r in self._scan_results], dtype=np.float64)
+        ref = quats[0]
+        for i in range(1, len(quats)):
+            if np.dot(quats[i], ref) < 0.0:
+                quats[i] = -quats[i]
+        avg_q = quats.mean(axis=0)
+        avg_q /= np.linalg.norm(avg_q)
+        aqx, aqy, aqz, aqw = float(avg_q[0]), float(avg_q[1]), float(avg_q[2]), float(avg_q[3])
+
+        # Rotation aus gemitteltem Quaternion fuer TF.
+        avg_r = quat_to_rotmat(aqx, aqy, aqz, aqw)
+        self._publish_detected_tf(avg_p, avg_r)
 
         pose = PoseStamped()
         pose.header.stamp = self.get_clock().now().to_msg()
-        pose.header.frame_id = f"{MARKER_FRAME}|{best_template_id}"
-        pose.pose.position.x = float(p_rel[0])
-        pose.pose.position.y = float(p_rel[1])
-        pose.pose.position.z = float(p_rel[2])
-        pose.pose.orientation.x = qx
-        pose.pose.orientation.y = qy
-        pose.pose.orientation.z = qz
-        pose.pose.orientation.w = qw
+        template_ids = [r["template_id"] for r in self._scan_results]
+        dominant_template = max(set(template_ids), key=template_ids.count)
+        pose.header.frame_id = f"{MARKER_FRAME}|{dominant_template}"
+        pose.pose.position.x = float(avg_p[0])
+        pose.pose.position.y = float(avg_p[1])
+        pose.pose.position.z = float(avg_p[2])
+        pose.pose.orientation.x = aqx
+        pose.pose.orientation.y = aqy
+        pose.pose.orientation.z = aqz
+        pose.pose.orientation.w = aqw
 
         self.pose_pub.publish(pose)
         p = pose.pose.position
-        q = pose.pose.orientation
+        avg_fitness = np.mean([r["fitness"] for r in self._scan_results])
+        avg_rmse = np.mean([r["rmse"] for r in self._scan_results])
         self.get_logger().info(
-            f"✓ Zange erkannt und publiziert in {MARKER_FRAME}: "
+            f"✓ Zange erkannt (Mittelwert {SCAN_AVERAGE_N} Messungen) in {MARKER_FRAME}: "
             f"x={p.x:.4f}, y={p.y:.4f}, z={p.z:.4f}, "
-            f"qx={q.x:.4f}, qy={q.y:.4f}, qz={q.z:.4f}, qw={q.w:.4f}"
+            f"qx={aqx:.4f}, qy={aqy:.4f}, qz={aqz:.4f}, qw={aqw:.4f}"
         )
         self.get_logger().info(
-            f"Template gewaehlt: {best_template_id} (fitness={best_fit:.4f}, rmse={best_rmse:.4f})"
+            f"Template: {dominant_template} (avg fitness={avg_fitness:.4f}, avg rmse={avg_rmse:.4f})"
         )
 
         self.scan_active = False

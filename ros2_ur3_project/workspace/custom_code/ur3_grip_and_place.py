@@ -56,12 +56,12 @@ TEMPLATE_GRASP_OFFSETS: Dict[str, Dict[str, Tuple[float, float, float, float]]] 
         "rotation_quat_xyzw": (+0.999909, +0.001677, -0.011609, +0.006670),
     },
     "breitv1_clean_direction": {
-        "translation_xyz_m": (0.0, +0.091391, -0.008295),
+        "translation_xyz_m": (0.0, +0.085391, -0.008295),
         "translation_sign_xyz": (+1.0, -1.0, +1.0),
         "rotation_quat_xyzw": (+0.999901, -0.009287, -0.010443, +0.001564),
     },
     "langv1_clean_direction": {
-        "translation_xyz_m": (0.00, +0.113, -0.010080),
+        "translation_xyz_m": (0.002, +0.108, -0.010080),
         "translation_sign_xyz": (+1.0, -1.0, +1.0),
         "rotation_quat_xyzw": (+0.999927, -0.007771, -0.000057, +0.009240),
     },
@@ -77,10 +77,10 @@ TEMPLATE_GRASP_OFFSETS: Dict[str, Dict[str, Tuple[float, float, float, float]]] 
 # andere Bewegungssequenz (z.B. Einsetzen in Halterung). Aktuell nur "table".
 TEMPLATE_PLACE_CONFIG: Dict[str, Dict] = {
     "breitv1_clean_direction": {
-        "place_x": 0.10,
-        "place_y": -0.06,
+        "place_x": 0.08,#rechts
+        "place_y": 0.15,#hoch
         "place_z": 0.0,
-        "place_yaw": math.pi,
+        "place_yaw": math.pi*1.2,
         "post_place_forward_m": 0.02,
         "post_place_retreat_m": 0.02,
     },
@@ -135,9 +135,11 @@ TABLE_TO_BASE_Z_SIGN = 1.0
 RETURN_HOME_AFTER_GRIP = True
 
 HOME_TABLE_X_M = 0.17
-HOME_TABLE_Y_M = -0.04
+HOME_TABLE_Y_M = -0.035
 HOME_TABLE_Z_M = 0.14
-HOME_YAW_RAD = math.pi
+HOME_ROLL_RAD  =  math.pi
+HOME_PITCH_RAD = 0
+HOME_YAW_RAD   = math.pi -0.02
 
 POST_GRIP_LIFT_BEFORE_PLACE_M = 0.02
 
@@ -602,7 +604,7 @@ class UR3GripAndPlaceNode(Node):
         )
 
     def _move_home(self) -> None:
-        q_home = rpy_to_quat(GRIPPER_FIXED_ROLL, GRIPPER_FIXED_PITCH, HOME_YAW_RAD + TOOL_YAW_OFFSET)
+        q_home = rpy_to_quat(HOME_ROLL_RAD, HOME_PITCH_RAD, HOME_YAW_RAD + TOOL_YAW_OFFSET)
         home = self._table_to_base(HOME_TABLE_X_M, HOME_TABLE_Y_M, HOME_TABLE_Z_M)
         jt_home, _ = self._plan_with_retry(home, q_home, "HOME")
         self.execute_trajectory(jt_home)

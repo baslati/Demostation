@@ -82,10 +82,8 @@
 		<xacro:elementary_unit prefix="top_plate" size_x="0.62" size_y="0.81" height="0.02" pos_on_station="0 0 0" rgba="${rgba_pink}"/>
 		<xacro:elementary_unit prefix="wbk1" size_x="0.2" size_y="0.2" height="0.06" pos_on_station="0.395 0.18 0.02" rgba="${rgba_black}"/>
 		<xacro:elementary_unit prefix="wbk12" size_x="0.06" size_y="0.06" height="0.12" pos_on_station="0.495 0.28 0.08" rgba="${rgba_black}"/>
-		<xacro:elementary_unit prefix="wbk2" size_x="0.2" size_y="0.2" height="0.06" pos_on_station="0.145 0.42 0.02" rgba="${rgba_black}"/>
-		<xacro:elementary_unit prefix="wbk22" size_x="0.06" size_y="0.06" height="0.12" pos_on_station="0.245 0.52 0.08" rgba="${rgba_black}"/>
-		<!-- Wand -->
-		<xacro:elementary_unit prefix="wall" size_x="0.02" size_y="0.35" height="0.45" pos_on_station="0 0.46 0.02" rgba="${rgba_black}"/>
+		<!-- <xacro:elementary_unit prefix="wbk2" size_x="0.2" size_y="0.2" height="0.06" pos_on_station="0.145 0.42 0.02" rgba="${rgba_black}"/> -->
+		<!-- <xacro:elementary_unit prefix="wbk22" size_x="0.06" size_y="0.06" height="0.12" pos_on_station="0.245 0.52 0.08" rgba="${rgba_black}"/> -->
 
 		<!-- Fester Referenz-Frame fuer den ArUco-Ursprung auf der Tischoberseite. -->
 		<!-- Wichtig: Nicht 'aruco_0' nennen, um keinen TF-Konflikt mit dem D405-Tracker zu erzeugen. -->
@@ -94,6 +92,28 @@
 			<parent link="station"/>
 			<child  link="aruco_table_ref_0"/>
 			<origin xyz="${aruco_on_station}" rpy="0 0 0"/>
+		</joint>
+
+		<!-- Zangenablage -->
+		<link name="zangenablage">
+			<visual>
+				<origin xyz="0 0 0" rpy="0 0 0"/>
+				<geometry>
+					<mesh filename="package://custom_ur_description/meshes/CUSTOM_meshes/Ablageflaeche-und-Schraege-V1.stl" scale="1 1 1"/>
+				</geometry>
+				<material name="zangenablage_mat"><color rgba="0.6 0.6 0.6 1.0"/></material>
+			</visual>
+			<collision>
+				<origin xyz="0 0 0" rpy="0 0 0"/>
+				<geometry>
+					<mesh filename="package://custom_ur_description/meshes/CUSTOM_meshes/Ablageflaeche-und-Schraege-V1.stl" scale="1 1 1"/>
+				</geometry>
+			</collision>
+		</link>
+		<joint name="station_to_zangenablage" type="fixed">
+			<parent link="station"/>
+			<child  link="zangenablage"/>
+			<origin xyz="0.37 0.4 0.02" rpy="0 0 1.5708"/>
 		</joint>
 
 	</xacro:macro>
