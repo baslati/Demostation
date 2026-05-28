@@ -77,11 +77,11 @@ TEMPLATE_GRASP_OFFSETS: Dict[str, Dict[str, Tuple[float, float, float, float]]] 
 # andere Bewegungssequenz (z.B. Einsetzen in Halterung). Aktuell nur "table".
 TEMPLATE_PLACE_CONFIG: Dict[str, Dict] = {
     "breitv1_clean_direction": {
-        "place_x": 0.08,#rechts
-        "place_y": 0.15,#hoch
+        "place_x": 0.06,#rechts
+        "place_y": 0.175,#hoch
         "place_z": 0.0,
-        "place_yaw": math.pi*1.2,
-        "post_place_forward_m": 0.02,
+        "place_yaw": math.pi*1.1,
+        "post_place_forward_m": 0.005,
         "post_place_retreat_m": 0.02,
     },
     "kurzv3_clean_direction": {
@@ -91,13 +91,30 @@ TEMPLATE_PLACE_CONFIG: Dict[str, Dict] = {
         "place_yaw": math.pi,
         "post_place_forward_m": 0.02,
         "post_place_retreat_m": 0.02,
+        "place_mode": "drop",
+        # Exakte Loslasspose (gemessen mit /tcp_pose_broadcaster/pose, Frame: base)
+        "drop_pose_position":    (0.40546671094181586, -0.0394736154984765, 0.18363264835816195),
+        "drop_pose_orientation": (-0.7400943638126082, 0.30610878535680625, 0.22317351932409374, 0.555653961069918),  # xyzw
+        # Gelenkwinkel der Loslasspose (gemessen mit /joint_states) -> kein IK noetig
+        "drop_joint_config": {
+            "shoulder_pan_joint":  2.5424118041992188,
+            "shoulder_lift_joint": -0.9264412683299561,
+            "elbow_joint":          1.1158397833453577,
+            "wrist_1_joint":        5.561045455723562,
+            "wrist_2_joint":       -0.6281092802630823,
+            "wrist_3_joint":        4.358260631561279,
+        },
     },
     "langv1_clean_direction": {
-        "place_x": 0.20,
-        "place_y": -0.06,
+        #"place_x": 0.20,
+        #"place_y": -0.06,
+        #"place_z": 0.0,
+        #"place_yaw": (math.pi/2+math.pi/8),
+        "place_x": 0.16,#rechts
+        "place_y": 0.17,#hoch
         "place_z": 0.0,
-        "place_yaw": (math.pi/2+math.pi/8),
-        "post_place_forward_m": 0.02,
+        "place_yaw": math.pi*1.25,
+        "post_place_forward_m": 0.00,
         "post_place_retreat_m": 0.02,
     },
 }
@@ -487,6 +504,38 @@ class UR3GripAndPlaceNode(Node):
             raise RuntimeError("Keine Trajektorie gefunden")
         return jt
 
+    def plan_to_joint_config(self, joint_config: Dict[str, float]) -> JointTrajectory:
+        constraints = Constraints()
+        for name, pos in joint_config.items():
+            jc = JointConstraint()
+            jc.joint_name = name
+            jc.position = float(pos)
+            jc.tolerance_above = 1e-3
+            jc.tolerance_below = 1e-3
+            jc.weight = 1.0
+            constraints.joint_constraints.append(jc)
+
+        mpr = MotionPlanRequest()
+        mpr.group_name = self.group
+        mpr.goal_constraints = [constraints]
+        mpr.start_state = self.get_robot_state()
+        mpr.max_velocity_scaling_factor = 0.4
+        mpr.max_acceleration_scaling_factor = 0.4
+        mpr.allowed_planning_time = 5.0
+        mpr.num_planning_attempts = 3
+
+        plan_req = GetMotionPlan.Request()
+        plan_req.motion_plan_request = mpr
+        fut = self.cli_plan.call_async(plan_req)
+        plan_res = self._wait_future_result(fut, "GetMotionPlan", SERVICE_TIMEOUT_SEC)
+        if plan_res is None or plan_res.motion_plan_response is None:
+            raise RuntimeError("GetMotionPlan lieferte keine Antwort")
+
+        jt = plan_res.motion_plan_response.trajectory.joint_trajectory
+        if not jt.points:
+            raise RuntimeError("Keine Trajektorie gefunden")
+        return jt
+
     def execute_trajectory(self, jt: JointTrajectory) -> None:
         goal = FollowJointTrajectory.Goal()
         goal.trajectory = jt
@@ -714,59 +763,106 @@ class UR3GripAndPlaceNode(Node):
                 f"yaw={place_cfg['place_yaw'] + TOOL_YAW_OFFSET:.3f}  [template={template_id}]"
             )
 
-            # 7) In XY-Ebene zur Ablage verfahren und dabei bereits auf Ablageausrichtung drehen
-            p_place_plane = p_place.copy()
-            p_place_plane[2] = p_after_grip_up[2]
-            self.get_logger().info("[PLACE_MOVE_ALIGN] Verfahre in Ebene zur Ablage und richte aus")
-            jt_place_plane, z_place_plane = self._plan_with_retry(p_place_plane, q_place, "PLACE_MOVE_ALIGN")
-            p_place_plane[2] = z_place_plane
-            self.execute_trajectory(jt_place_plane)
+            place_mode = place_cfg.get("place_mode", "table")
 
-            # 8) Direkt vertikal auf Ablagehoehe
-            self.get_logger().info("[PLACE_DESCEND] Senke direkt auf Ablagehoehe")
-            jt_place_desc, z_place_desc = self._plan_with_retry(p_place, q_place, "PLACE_DESCEND")
-            p_place[2] = z_place_desc
-            self.execute_trajectory(jt_place_desc)
+            if place_mode == "drop":
+                # DROP-Modus: Zange in schraege Halterung fallen lassen
+                # Exakte Loslasspose aus Config (gemessen mit TCP-Pose-Tool)
+                dp = place_cfg["drop_pose_position"]
+                dq_raw = place_cfg["drop_pose_orientation"]  # xyzw
+                q_drop = Quaternion(x=dq_raw[0], y=dq_raw[1], z=dq_raw[2], w=dq_raw[3])
+                p_drop = np.array([dp[0], dp[1], dp[2]], dtype=np.float64)
 
-            # 9) Ablegen
-            self.get_logger().info("[GRIPPER] Oeffnen...")
-            if not set_tool_do(self, 16, 0.0):
-                raise RuntimeError("Greifer CLOSE Release (Pin 16=0) fehlgeschlagen")
-            gripper(self, close=False, pulse=True, pulse_time=OPEN_SECONDS)
-            self.get_logger().info("[GRIPPER] Offen")
+                # 5b) Auf Home-Hoehe hochfahren (nur Z, aktuelle XY-Position beibehalten)
+                home_base = self._table_to_base(HOME_TABLE_X_M, HOME_TABLE_Y_M, HOME_TABLE_Z_M)
+                p_home_height = p_after_grip_up.copy()
+                p_home_height[2] = home_base[2]
+                self.get_logger().info(
+                    f"[DROP_LIFT_HOME_Z] Fahre auf Home-Hoehe z={p_home_height[2]:.4f}"
+                )
+                jt_lift, z_lift = self._plan_with_retry(p_home_height, q_target, "DROP_LIFT_HOME_Z")
+                p_home_height[2] = z_lift
+                self.execute_trajectory(jt_lift)
 
-            # 10) In Ablageausrichtung zurueckfahren (template-spezifische Distanz)
-            r_base_place = quat_to_rotmat(q_place.x, q_place.y, q_place.z, q_place.w)
-            place_y_in_base = r_base_place[:, 1]
-            place_y_xy = np.array([place_y_in_base[0], place_y_in_base[1], 0.0], dtype=np.float64)
-            place_norm_xy = float(np.linalg.norm(place_y_xy))
-            if place_norm_xy < 1e-9:
-                raise RuntimeError("Ablage +Y kann nicht in XY-Ebene projiziert werden (norm~0)")
-            place_y_xy /= place_norm_xy
+                # 7) Direkt zur gemessenen Loslasspose via Joint-Space (kein IK noetig)
+                drop_joints = place_cfg.get("drop_joint_config")
+                if drop_joints:
+                    self.get_logger().info("[DROP_MOVE] Fahre zur Loslasspose (Joint-Space)")
+                    jt_drop = self.plan_to_joint_config(drop_joints)
+                else:
+                    self.get_logger().info(
+                        f"[DROP_MOVE] Fahre zur Loslasspose (IK) "
+                        f"({p_drop[0]:.4f}, {p_drop[1]:.4f}, {p_drop[2]:.4f})"
+                    )
+                    jt_drop, _ = self._plan_with_retry(p_drop, q_drop, "DROP_MOVE")
+                self.execute_trajectory(jt_drop)
 
-            post_forward = place_cfg["post_place_forward_m"]
-            p_forward = p_place.copy()
-            forward_delta_xy = place_y_xy * (-post_forward)
-            p_forward[0] += forward_delta_xy[0]
-            p_forward[1] += forward_delta_xy[1]
-            self.get_logger().info(
-                f"[POST_PLACE_FORWARD] entlang Ablage +Y={post_forward:.3f}m, "
-                f"delta_xy=({forward_delta_xy[0]:+.4f}, {forward_delta_xy[1]:+.4f})"
-            )
-            jt_forward, z_forward = self._plan_with_retry(p_forward, q_place, "POST_PLACE_FORWARD")
-            p_forward[2] = z_forward
-            self.execute_trajectory(jt_forward)
+                # 8) Greifer oeffnen -> Zange faellt ins Fach
+                self.get_logger().info("[GRIPPER] Oeffnen (DROP)...")
+                if not set_tool_do(self, 16, 0.0):
+                    raise RuntimeError("Greifer CLOSE Release (Pin 16=0) fehlgeschlagen")
+                gripper(self, close=False, pulse=True, pulse_time=OPEN_SECONDS)
+                self.get_logger().info("[GRIPPER] Offen - Zange faellt ins Fach")
 
-            # 11) Vertikal nach oben wegziehen (template-spezifische Distanz)
-            post_retreat = place_cfg["post_place_retreat_m"]
-            p_retreat = p_forward.copy()
-            p_retreat[2] += post_retreat
-            self.get_logger().info(f"[RETREAT] Vertikal nach oben um {post_retreat:.3f}m")
-            jt_retreat, z_retreat = self._plan_with_retry(p_retreat, q_place, "PLACE_RETREAT")
-            p_retreat[2] = z_retreat
-            self.execute_trajectory(jt_retreat)
+                # 9) Direkt zur Home-Pose zurueck (Joint-Space, kein IK noetig)
+                self.get_logger().info("[DROP_RETREAT] Fahre direkt zur Home-Pose")
+                self._move_home()
 
-            if RETURN_HOME_AFTER_GRIP:
+            else:
+                # TABLE-Modus: normales Ablegen auf dem Tisch
+                # 7) In XY-Ebene zur Ablage verfahren und dabei bereits auf Ablageausrichtung drehen
+                p_place_plane = p_place.copy()
+                p_place_plane[2] = p_after_grip_up[2]
+                self.get_logger().info("[PLACE_MOVE_ALIGN] Verfahre in Ebene zur Ablage und richte aus")
+                jt_place_plane, z_place_plane = self._plan_with_retry(p_place_plane, q_place, "PLACE_MOVE_ALIGN")
+                p_place_plane[2] = z_place_plane
+                self.execute_trajectory(jt_place_plane)
+
+                # 8) Direkt vertikal auf Ablagehoehe
+                self.get_logger().info("[PLACE_DESCEND] Senke direkt auf Ablagehoehe")
+                jt_place_desc, z_place_desc = self._plan_with_retry(p_place, q_place, "PLACE_DESCEND")
+                p_place[2] = z_place_desc
+                self.execute_trajectory(jt_place_desc)
+
+                # 9) Ablegen
+                self.get_logger().info("[GRIPPER] Oeffnen...")
+                if not set_tool_do(self, 16, 0.0):
+                    raise RuntimeError("Greifer CLOSE Release (Pin 16=0) fehlgeschlagen")
+                gripper(self, close=False, pulse=True, pulse_time=OPEN_SECONDS)
+                self.get_logger().info("[GRIPPER] Offen")
+
+                # 10) In Ablageausrichtung zurueckfahren (template-spezifische Distanz)
+                r_base_place = quat_to_rotmat(q_place.x, q_place.y, q_place.z, q_place.w)
+                place_y_in_base = r_base_place[:, 1]
+                place_y_xy = np.array([place_y_in_base[0], place_y_in_base[1], 0.0], dtype=np.float64)
+                place_norm_xy = float(np.linalg.norm(place_y_xy))
+                if place_norm_xy < 1e-9:
+                    raise RuntimeError("Ablage +Y kann nicht in XY-Ebene projiziert werden (norm~0)")
+                place_y_xy /= place_norm_xy
+
+                post_forward = place_cfg["post_place_forward_m"]
+                p_forward = p_place.copy()
+                forward_delta_xy = place_y_xy * (-post_forward)
+                p_forward[0] += forward_delta_xy[0]
+                p_forward[1] += forward_delta_xy[1]
+                self.get_logger().info(
+                    f"[POST_PLACE_FORWARD] entlang Ablage +Y={post_forward:.3f}m, "
+                    f"delta_xy=({forward_delta_xy[0]:+.4f}, {forward_delta_xy[1]:+.4f})"
+                )
+                jt_forward, z_forward = self._plan_with_retry(p_forward, q_place, "POST_PLACE_FORWARD")
+                p_forward[2] = z_forward
+                self.execute_trajectory(jt_forward)
+
+                # 11) Vertikal nach oben wegziehen (template-spezifische Distanz)
+                post_retreat = place_cfg["post_place_retreat_m"]
+                p_retreat = p_forward.copy()
+                p_retreat[2] += post_retreat
+                self.get_logger().info(f"[RETREAT] Vertikal nach oben um {post_retreat:.3f}m")
+                jt_retreat, z_retreat = self._plan_with_retry(p_retreat, q_place, "PLACE_RETREAT")
+                p_retreat[2] = z_retreat
+                self.execute_trajectory(jt_retreat)
+
+            if RETURN_HOME_AFTER_GRIP and place_mode != "drop":
                 try:
                     self._move_home()
                 except Exception as exc:
