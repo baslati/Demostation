@@ -773,16 +773,9 @@ class UR3GripAndPlaceNode(Node):
                 q_drop = Quaternion(x=dq_raw[0], y=dq_raw[1], z=dq_raw[2], w=dq_raw[3])
                 p_drop = np.array([dp[0], dp[1], dp[2]], dtype=np.float64)
 
-                # 5b) Auf Home-Hoehe hochfahren (nur Z, aktuelle XY-Position beibehalten)
-                home_base = self._table_to_base(HOME_TABLE_X_M, HOME_TABLE_Y_M, HOME_TABLE_Z_M)
-                p_home_height = p_after_grip_up.copy()
-                p_home_height[2] = home_base[2]
-                self.get_logger().info(
-                    f"[DROP_LIFT_HOME_Z] Fahre auf Home-Hoehe z={p_home_height[2]:.4f}"
-                )
-                jt_lift, z_lift = self._plan_with_retry(p_home_height, q_target, "DROP_LIFT_HOME_Z")
-                p_home_height[2] = z_lift
-                self.execute_trajectory(jt_lift)
+                # 5b) Zur Home-Position fahren (XY + Z), dann von dort zur Loslasspose
+                self.get_logger().info("[DROP_MOVE_HOME] Fahre zunaechst zur Home-Position")
+                self._move_home()
 
                 # 7) Direkt zur gemessenen Loslasspose via Joint-Space (kein IK noetig)
                 drop_joints = place_cfg.get("drop_joint_config")
