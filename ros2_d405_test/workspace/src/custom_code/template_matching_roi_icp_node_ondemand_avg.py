@@ -25,7 +25,7 @@ from geometry_msgs.msg import PoseStamped, TransformStamped
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from tf2_ros import Buffer, TransformBroadcaster, TransformListener
 
 
@@ -215,10 +215,9 @@ class D405ArucoThenToolOnceNode(Node):
         self.create_subscription(CameraInfo, CAMERA_INFO_TOPIC, self._on_camera_info, qos_sensor)
         self.create_subscription(Image, IMAGE_TOPIC, self._on_image, qos_sensor)
         self.create_subscription(PointCloud2, POINTCLOUD_TOPIC, self._on_cloud, qos_sensor)
+        self.create_subscription(Bool, "/gui/scan_trigger", self._on_scan_trigger, 10)
 
         self._shutdown = False
-        self.input_thread = threading.Thread(target=self._input_loop, daemon=True)
-        self.input_thread.start()
         self.cloud_worker_thread = threading.Thread(target=self._cloud_worker, daemon=True)
         self.cloud_worker_thread.start()
         self.detected_latch_thread = threading.Thread(target=self._detected_latch_worker, daemon=True)
@@ -375,23 +374,14 @@ class D405ArucoThenToolOnceNode(Node):
                 self.get_logger().info("Jetzt Enter druecken fuer Zangen-Erkennung")
             return
 
-    def _input_loop(self) -> None:
-        while not self._shutdown and rclpy.ok():
-            if not self.wait_for_enter:
-                time.sleep(0.1)
-                continue
-
-            try:
-                user = input("\n[Capture] Enter fuer Zange (q zum Beenden): ").strip().lower()
-            except (EOFError, KeyboardInterrupt):
-                break
-
-            if user == "q":
-                self.get_logger().info("Beende auf Benutzerwunsch")
-                rclpy.shutdown()
-                return
-
-            self._start_tool_scan_once()
+    def _on_scan_trigger(self, msg: Bool) -> None:
+        if not msg.data:
+            return
+        if not self.aruco_found:
+            self.get_logger().warn("[GUI-Trigger] ArUco noch nicht erkannt — Scan ignoriert")
+            return
+        self.get_logger().info("[GUI-Trigger] Scan-Trigger empfangen, starte Zangen-Erkennung")
+        self._start_tool_scan_once()
 
     def _start_tool_scan_once(self) -> None:
         if self.scan_active:

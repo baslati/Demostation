@@ -44,6 +44,7 @@ from moveit_msgs.srv import GetMotionPlan, GetPlanningScene, GetPositionIK
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
+from std_msgs.msg import String
 from trajectory_msgs.msg import JointTrajectory
 
 
@@ -243,7 +244,9 @@ class UR3ProvideFromStorageNode(Node):
         self.startup_done = False
         self.ready_event = threading.Event()  # wird gesetzt sobald Initialfahrt fertig
 
+        self.gui_status_pub = self.create_publisher(String, "/gui/robot_status", 10)
         self.create_subscription(JointState, "/joint_states", self._on_joint_state, 20)
+        self.create_subscription(String, "/gui/plier_selection", self._on_plier_selection, 10)
         self.create_timer(0.5, self._startup_home_once)
 
         self.get_logger().info("=======================================================")
@@ -253,6 +256,25 @@ class UR3ProvideFromStorageNode(Node):
     # ------------------------------------------------------------------
     # Joint-State Hilfsmethoden
     # ------------------------------------------------------------------
+
+    def _publish_gui_status(self, status: str) -> None:
+        msg = String()
+        msg.data = status
+        self.gui_status_pub.publish(msg)
+        self.get_logger().info(f"[GUI-STATUS] {status}")
+
+    def _on_plier_selection(self, msg: String) -> None:
+        template_id = msg.data.strip()
+        if template_id not in STORAGE_PICK_CONFIG:
+            self.get_logger().warn(f"[GUI] Unbekannter Template-Name: '{template_id}'")
+            return
+        with self.busy_lock:
+            if self.busy:
+                self.get_logger().warn("[GUI] Roboter ist beschäftigt – Anfrage ignoriert")
+                return
+        self.get_logger().info(f"[GUI] Starte: {template_id}")
+        self._publish_gui_status("executing")
+        self.request_pick(template_id)
 
     def _on_joint_state(self, msg: JointState) -> None:
         with self.js_lock:
@@ -753,11 +775,13 @@ class UR3ProvideFromStorageNode(Node):
             self._move_home()
 
             self.get_logger().info(f"[OK] Zange '{template_id}' erfolgreich bereitgestellt")
+            self._publish_gui_status("success")
 
         except Exception as exc:
             import traceback
             self.get_logger().error(f"[ERROR] Ablauf fehlgeschlagen: {exc}")
             self.get_logger().error(f"[ERROR] Traceback:\n{traceback.format_exc()}")
+            self._publish_gui_status("failed")
         finally:
             with self.busy_lock:
                 self.busy = False
@@ -904,13 +928,8 @@ def _menu_loop(node: UR3ProvideFromStorageNode) -> None:
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = UR3ProvideFromStorageNode()
-
-    # ROS-Spin laeuft im Hintergrund, Hauptthread fuehrt das Terminal-Menue
-    spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
-    spin_thread.start()
-
     try:
-        _menu_loop(node)
+        rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:

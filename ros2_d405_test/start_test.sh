@@ -7,38 +7,82 @@ export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
 # In Projektordner wechseln
 cd "$(dirname "$0")"
 
-echo "Setze X11 Rechte für Docker..."
-xhost +local:docker
-echo "ROS_DOMAIN_ID wird verwendet: ${ROS_DOMAIN_ID}"
+ROS_SETUP="source /opt/ros/humble/setup.bash && source /workspace/install/setup.bash"
 
-echo "Baue Docker Image (mit Host-Netzwerk für Internetzugriff)..."
+echo "========================================"
+echo "  Demostation D405 Autostart"
+echo "========================================"
+
+echo "[1/6] Setze X11 Rechte..."
+xhost +local:docker
+
+echo "[2/6] Baue Docker Image..."
 docker build --network host -t d405-test-image .
 
-echo "Starte Docker Container..."
-echo "Zum Testen der Kamera:"
-echo "realsense-viewer"
-echo "ros2 launch realsense2_camera rs_launch.py pointcloud.enable:=true align_depth.enable:=true "
-echo "
-ros2 launch realsense2_camera rs_launch.py   depth_module.depth_profile:=848x480x5  depth_module.color_profile:=848x480x5  pointcloud.enable:=true align_depth.enable:=true enable_sync:=true      decimation_filter.enable:=true spatial_filter.enable:=false temporal_filter.enable:=true hole_filling_filter.enable:=false
-  "
-
-echo " docker exec -it d405_test_container bash
-python3 /workspace/src/custom_packages/custom_code/template_matching_roi_icp_node_ondemand.py"
-echo " docker exec -it d405_test_container bash
-rviz2 -d /workspace/src/custom_packages/custom_code/config.rviz"
-echo "python3 /workspace/src/custom_packages/custom_code/template_scan_grasp_point_d405.py"
-
-
-# Check if 'docker compose' is available, otherwise try 'docker-compose'
+echo "[3/6] Starte Container..."
 if docker compose version >/dev/null 2>&1; then
     docker compose up -d
 else
     docker-compose up -d
 fi
 
-echo "Container gestartet. Gebe Shell frei..."
+echo "[4/6] Starte Kamera..."
+docker exec -d d405_test_container bash -c \
+  "$ROS_SETUP && ros2 launch realsense2_camera rs_launch.py \
+     depth_module.depth_profile:=848x480x5 \
+     depth_module.color_profile:=848x480x5 \
+     pointcloud.enable:=true \
+     align_depth.enable:=true \
+     enable_sync:=true \
+     decimation_filter.enable:=true \
+     spatial_filter.enable:=false \
+     temporal_filter.enable:=true \
+     hole_filling_filter.enable:=false \
+     > /tmp/camera.log 2>&1"
+
+echo "    Warte auf Kamera-Init (8s)..."
+sleep 8
+
+echo "[5/6] Starte Erkennungs-Node + RViz..."
+docker exec -d d405_test_container bash -c \
+  "$ROS_SETUP && python3 /workspace/src/custom_packages/custom_code/template_matching_roi_icp_node_ondemand_avg.py \
+     > /tmp/detection.log 2>&1"
+
+docker exec -d d405_test_container bash -c \
+  "$ROS_SETUP && rviz2 -d /workspace/src/custom_packages/custom_code/config.rviz \
+     > /tmp/rviz.log 2>&1"
+
+echo "[6/6] Starte Streamlit GUI + Chromium..."
+docker exec -d d405_test_container bash -c \
+  "$ROS_SETUP && streamlit run /workspace/cobot_gui.py \
+     --server.headless true \
+     --server.port 8501 \
+     --server.address 0.0.0.0 \
+     > /tmp/streamlit.log 2>&1"
+
+sleep 4
+
+flatpak run org.chromium.Chromium \
+  --app=http://localhost:8501 \
+  --window-position=0,900 \
+  --window-size=1920,180 \
+  --noerrdialogs \
+  --disable-infobars \
+  --no-first-run \
+  --disable-session-crashed-bubble \
+  --disable-gpu \
+  --log-level=3 \
+  2>/dev/null &
+CHROMIUM_PID=$!
+
+echo ""
+echo "========================================"
+echo "  Alles gestartet. Shell freigegeben."
+echo "  Logs: /tmp/camera.log /tmp/detection.log"
+echo "========================================"
 docker exec -it d405_test_container bash
 
-# Container nach dem Verlassen der Shell stoppen und löschen
-echo "Stoppe und lösche Container..."
+# Aufräumen beim Beenden
+echo "Stoppe Container..."
 docker compose down
+[ -n "$CHROMIUM_PID" ] && kill $CHROMIUM_PID 2>/dev/null || true

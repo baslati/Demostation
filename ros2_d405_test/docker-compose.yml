@@ -24,6 +24,7 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/.Xauthority:/root/.Xauthority:rw
       - ./workspace/src:/workspace/src/custom_packages
+      - ../cobot_gui.py:/workspace/cobot_gui.py
     privileged: true
     devices:
       - "/dev/bus/usb:/dev/bus/usb"

@@ -96,4 +96,15 @@ RUN source /opt/ros/humble/setup.bash && \
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
     echo "source /workspace/install/setup.bash" >> /root/.bashrc
 
+# GUI
+RUN pip3 install --index-url https://pypi.org/simple streamlit
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:mozillateam/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    firefox-esr \
+    xdotool \
+    && rm -rf /var/lib/apt/lists/*
+
 ENTRYPOINT ["/bin/bash"]

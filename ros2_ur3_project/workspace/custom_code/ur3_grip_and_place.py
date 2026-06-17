@@ -38,6 +38,7 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
+from std_msgs.msg import String
 from trajectory_msgs.msg import JointTrajectory
 
 
@@ -307,6 +308,8 @@ class UR3GripAndPlaceNode(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
         )
+
+        self.gui_status_pub = self.create_publisher(String, "/gui/robot_status", 10)
 
         self.get_logger().info(f"[SUBSCRIPTION] Abonniere Topic: {TARGET_TOPIC} (PoseStamped)")
         self.create_subscription(PoseStamped, TARGET_TOPIC, self._on_target_pose, qos_pose)
@@ -862,14 +865,22 @@ class UR3GripAndPlaceNode(Node):
                     self.get_logger().warn(f"[HOME] Home-Fahrt fehlgeschlagen (Ablauf bleibt OK): {exc}")
 
             self.get_logger().info("[OK] Ablauf komplett erfolgreich")
+            self._publish_gui_status("success")
 
         except Exception as exc:
             self.get_logger().error(f"[ERROR] Ablauf fehlgeschlagen: {exc}", throttle_duration_sec=1)
             import traceback
             self.get_logger().error(f"[ERROR] Traceback:\n{traceback.format_exc()}")
+            self._publish_gui_status("failed")
         finally:
             with self.busy_lock:
                 self.busy = False
+
+    def _publish_gui_status(self, status: str) -> None:
+        msg = String()
+        msg.data = status
+        self.gui_status_pub.publish(msg)
+        self.get_logger().info(f"[GUI-STATUS] {status}")
 
     def _on_target_pose(self, msg: PoseStamped) -> None:
         with self.count_lock:
