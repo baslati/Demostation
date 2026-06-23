@@ -76,6 +76,8 @@ Visualization Manager:
           Value: true
         custom_cylinder:
           Value: true
+        detected_cropv1_center:
+          Value: true
         egpc40_gripper:
           Value: true
         flange:
@@ -95,6 +97,8 @@ Visualization Manager:
         tcp:
           Value: true
         tool0:
+          Value: true
+        tool0_controller:
           Value: true
         top_plate_KOS:
           Value: true
@@ -138,7 +142,8 @@ Visualization Manager:
           camera_color_frame:
             camera_color_optical_frame:
               aruco_0:
-                {}
+                detected_cropv1_center:
+                  {}
           camera_depth_frame:
             camera_depth_optical_frame:
               {}
@@ -258,25 +263,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 0.7957950234413147
+      Distance: 0.6902153491973877
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.10305751115083694
-        Y: 0.013369692489504814
-        Z: -0.017273519188165665
+        X: 0.16130796074867249
+        Y: 0.001710566459223628
+        Z: -0.04410436004400253
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.7853960394859314
+      Pitch: 0.7547969818115234
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.108614444732666
+      Yaw: 4.953610897064209
     Saved: ~
 Window Geometry:
   Displays:

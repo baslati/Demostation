@@ -85,4 +85,4 @@ docker exec -it d405_test_container bash
 # Aufräumen beim Beenden
 echo "Stoppe Container..."
 docker compose down
-[ -n "$CHROMIUM_PID" ] && kill $CHROMIUM_PID 2>/dev/null || true
+pkill -f chromium 2>/dev/null || true

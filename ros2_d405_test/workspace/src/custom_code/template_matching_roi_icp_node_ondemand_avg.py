@@ -12,6 +12,7 @@ Ablauf:
 
 import os
 os.environ.setdefault("RCUTILS_CONSOLE_OUTPUT_FORMAT", "[{severity}]: {message}")
+import sys
 import threading
 import time
 from typing import Dict, Optional, Tuple
@@ -913,11 +914,29 @@ class D405ArucoThenToolOnceNode(Node):
         super().destroy_node()
 
 
+def _enter_loop(node: D405ArucoThenToolOnceNode) -> None:
+    while rclpy.ok():
+        try:
+            input()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if node.wait_for_enter:
+            node._start_tool_scan_once()
+        else:
+            node.get_logger().warn("Enter ignoriert: ArUco noch nicht erkannt")
+
+
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = D405ArucoThenToolOnceNode()
+    spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
+    spin_thread.start()
     try:
-        rclpy.spin(node)
+        if sys.stdin.isatty():
+            _enter_loop(node)
+        else:
+            # Kein Terminal (z.B. docker exec -d): GUI-Trigger uebernimmt, einfach laufen lassen
+            spin_thread.join()
     except KeyboardInterrupt:
         pass
     finally:

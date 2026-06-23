@@ -28,7 +28,7 @@ joint_limits:
 
   wrist_1_joint:
     has_position_limits: true
-    min_position: 2.0944          # 120 deg
+    min_position: -4.1888         # 120 deg - 360 deg
     max_position: 5.9341          # 340 deg
     has_velocity_limits: true
     max_velocity: 1.0

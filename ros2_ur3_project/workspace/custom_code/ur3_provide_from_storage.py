@@ -24,6 +24,7 @@ Ablauf:
 
 import math
 import os
+import sys
 import threading
 import time
 from typing import Dict, Tuple
@@ -68,6 +69,7 @@ STORAGE_PICK_CONFIG: Dict[str, Dict] = {
         "pick_center_offset_y_m": 0.01,  # pick_center +1 cm entlang Greifer-Y verschieben
         "approach_shift_m": 0.03,   # Verschieben entlang Greifer-Y vor dem Schliessen
         "post_pick_lift_m": 0.02,   # Vertikaler Anstieg nach dem Greifen
+        "provide_tip_retreat_y_m": 0.01,   # Rückzug in +Y nach Greifer öffnen (verhakt sonst)
     },
     "langv1_clean_direction": {
         "pick_mode": "table",
@@ -119,7 +121,7 @@ TABLE_TO_BASE_Z_SIGN =  1.0
 
 HOME_TABLE_X_M = 0.17
 HOME_TABLE_Y_M = -0.035
-HOME_TABLE_Z_M = 0.14
+HOME_TABLE_Z_M = 0.15
 HOME_ROLL_RAD  = math.pi
 HOME_PITCH_RAD = 0.0
 HOME_YAW_RAD   = math.pi - 0.02
@@ -301,6 +303,7 @@ class UR3ProvideFromStorageNode(Node):
             if not self._wait_for_joint_state(JOINT_STATE_WAIT_SEC):
                 self.get_logger().warn("[STARTUP] Keine /joint_states – Initialfahrt uebersprungen")
             else:
+                time.sleep(3.0)
                 try:
                     self._move_home()
                     self.get_logger().info("[STARTUP] Initialfahrt erfolgreich")
@@ -682,7 +685,7 @@ class UR3ProvideFromStorageNode(Node):
     # Ablegen an der Bereitstellungsposition
     # ------------------------------------------------------------------
 
-    def _do_provide(self) -> None:
+    def _do_provide(self, pick_cfg: Dict = None) -> None:
         q_provide = rpy_to_quat(
             GRIPPER_FIXED_ROLL, GRIPPER_FIXED_PITCH, PROVIDE_YAW_RAD + TOOL_YAW_OFFSET
         )
@@ -717,7 +720,19 @@ class UR3ProvideFromStorageNode(Node):
         gripper(self, close=False, pulse=True, pulse_time=OPEN_SECONDS)
         self.get_logger().info("[GRIPPER] Offen")
 
-        # 4) Vertikal wegziehen
+        # 4a) Optionaler horizontaler Rückzug entlang Tisch-Y (zangenspezifisch)
+        tip_retreat_y = (pick_cfg or {}).get("provide_tip_retreat_y_m", 0.0)
+        if tip_retreat_y != 0.0:
+            p_tip_retreat = p_provide.copy()
+            p_tip_retreat[1] += TABLE_TO_BASE_Y_SIGN * tip_retreat_y
+            self.get_logger().info(
+                f"[PROVIDE_TIP_RETREAT] Rückzug {tip_retreat_y*100:.0f}cm in Tisch-Y"
+            )
+            jt_tip_retreat, _ = self._plan_with_retry(p_tip_retreat, q_provide, "PROVIDE_TIP_RETREAT")
+            self.execute_trajectory(jt_tip_retreat)
+            p_provide = p_tip_retreat
+
+        # 4b) Vertikal wegziehen
         p_retreat = p_provide.copy()
         p_retreat[2] += PROVIDE_RETREAT_UP_M
         self.get_logger().info(
@@ -768,7 +783,7 @@ class UR3ProvideFromStorageNode(Node):
 
             # Bereitstellen
             self.get_logger().info("[PROVIDE] Fahre zur Bereitstellungsposition")
-            self._do_provide()
+            self._do_provide(pick_cfg)
 
             # Zurueck zur Home-Pose
             self.get_logger().info("[HOME] Fahre zur Home-Pose")
@@ -928,8 +943,14 @@ def _menu_loop(node: UR3ProvideFromStorageNode) -> None:
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = UR3ProvideFromStorageNode()
+    spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
+    spin_thread.start()
     try:
-        rclpy.spin(node)
+        if sys.stdin.isatty():
+            _menu_loop(node)
+        else:
+            # Kein Terminal (z.B. docker exec -d): GUI steuert, einfach laufen lassen
+            spin_thread.join()
     except KeyboardInterrupt:
         pass
     finally:

@@ -154,7 +154,7 @@ RETURN_HOME_AFTER_GRIP = True
 
 HOME_TABLE_X_M = 0.17
 HOME_TABLE_Y_M = -0.035
-HOME_TABLE_Z_M = 0.14
+HOME_TABLE_Z_M = 0.15
 HOME_ROLL_RAD  =  math.pi
 HOME_PITCH_RAD = 0
 HOME_YAW_RAD   = math.pi -0.02
@@ -403,6 +403,7 @@ class UR3GripAndPlaceNode(Node):
                     f"[STARTUP] Keine /joint_states innerhalb von {JOINT_STATE_WAIT_SEC:.1f}s"
                 )
                 return
+            time.sleep(3.0)
             try:
                 self.get_logger().info("[STARTUP] Fahre zur Home-Pose...")
                 self._move_home()
