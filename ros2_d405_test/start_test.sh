@@ -71,6 +71,7 @@ flatpak run org.chromium.Chromium \
   --no-first-run \
   --disable-session-crashed-bubble \
   --disable-gpu \
+  --password-store=basic \
   --log-level=3 \
   2>/dev/null &
 CHROMIUM_PID=$!

@@ -305,11 +305,7 @@ col_reboot, col_breit, col_lang, col_kurz, col_aufraeum = st.columns([1, 2, 2, 2
 
 with col_reboot:
     if st.button("Reboot", key="btn_reboot", use_container_width=True, type="secondary"):
-        subprocess.Popen([
-            "bash", "-c",
-            "docker restart demostation-ur3 ; "
-            "docker restart demostation-d405 "
-        ])
+        subprocess.Popen(["reboot"])
         to_idle()
         st.rerun()
 
