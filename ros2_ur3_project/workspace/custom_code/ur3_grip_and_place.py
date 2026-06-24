@@ -903,6 +903,14 @@ class UR3GripAndPlaceNode(Node):
             self.get_logger().error(f"[ERROR] Traceback:\n{traceback.format_exc()}")
 
             if "tolerance" in exc_str or "path_tolerance" in exc_str:
+                try:
+                    gripper(self, close=False, pulse=True, pulse_time=OPEN_SECONDS)
+                except Exception as g_exc:
+                    self.get_logger().warn(f"[TOLERANCE] Greifer öffnen fehlgeschlagen: {g_exc}")
+                try:
+                    self._move_home()
+                except Exception as home_exc:
+                    self.get_logger().warn(f"[TOLERANCE] Rueckfahrt nach Toleranzfehler fehlgeschlagen: {home_exc}")
                 self._publish_gui_status("tolerance_violation")
             elif "keine trajektorie" in exc_str or "no path" in exc_str or "planning failed" in exc_str:
                 try:

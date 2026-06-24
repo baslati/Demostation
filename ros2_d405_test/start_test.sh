@@ -9,8 +9,20 @@ cd "$(dirname "$0")"
 
 ROS_SETUP="source /opt/ros/humble/setup.bash && source /workspace/install/setup.bash"
 
-echo "Warte 20s auf vollständigen Systemstart..."
-sleep 20
+echo "Warte auf Systemstart und D405-Kamera (USB 8086:0b5b)..."
+sleep 10
+timeout=120
+elapsed=0
+while ! lsusb | grep -q "8086:0b5b"; do
+    if [ $elapsed -ge $timeout ]; then
+        echo "WARNUNG: D405 nach ${timeout}s nicht gefunden, starte trotzdem..."
+        break
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+done
+echo "    D405 erkannt (nach ${elapsed}s), warte 5s auf USB-Initialisierung..."
+sleep 5
 
 echo "========================================"
 echo "  Demostation D405 Autostart"
