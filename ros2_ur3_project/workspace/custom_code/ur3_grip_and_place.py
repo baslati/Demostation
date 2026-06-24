@@ -38,7 +38,7 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from trajectory_msgs.msg import JointTrajectory
 
 
@@ -101,7 +101,7 @@ TEMPLATE_PLACE_CONFIG: Dict[str, Dict] = {
             "shoulder_pan_joint":  2.5424118041992188,
             "shoulder_lift_joint": -0.9264412683299561,
             "elbow_joint":          1.1158397833453577,
-            "wrist_1_joint":        5.561045455723562,
+            "wrist_1_joint":       -0.7221396514560240,
             "wrist_2_joint":       -0.6281092802630823,
             "wrist_3_joint":        4.358260631561279,
         },
@@ -126,6 +126,7 @@ ACTION_TIMEOUT_SEC = 30.0
 IK_SERVICE_TIMEOUT_SEC = 20.0
 JOINT_STATE_WAIT_SEC = 10.0
 STARTUP_MOVE_HOME = True
+
 
 HOLD_SECONDS = 0.5
 OPEN_SECONDS = 0.5
@@ -314,6 +315,7 @@ class UR3GripAndPlaceNode(Node):
         self.get_logger().info(f"[SUBSCRIPTION] Abonniere Topic: {TARGET_TOPIC} (PoseStamped)")
         self.create_subscription(PoseStamped, TARGET_TOPIC, self._on_target_pose, qos_pose)
         self.create_subscription(JointState, "/joint_states", self._on_joint_state, 20)
+        self.create_subscription(Bool, "/gui/home_drive", self._on_home_drive, 10)
 
         self.create_timer(2.0, self._subscription_health_check)
         self.create_timer(0.5, self._startup_home_once)
@@ -663,6 +665,32 @@ class UR3GripAndPlaceNode(Node):
         self.execute_trajectory(jt_home)
         self.get_logger().info("[HOME] Zur Home-Pose gefahren")
 
+    def _on_home_drive(self, msg) -> None:
+        if not msg.data:
+            return
+        with self.busy_lock:
+            if self.busy:
+                self.get_logger().warn("[HOME-DRIVE] Roboter beschäftigt, Home-Fahrt ignoriert")
+                return
+            self.busy = True
+        def worker():
+            try:
+                self.get_logger().info("[HOME-DRIVE] Kamerafahrt gestartet")
+                self._move_home()
+                self.get_logger().info("[HOME-DRIVE] Kamerafahrt abgeschlossen")
+                self._publish_gui_status("home_reached")
+            except Exception as exc:
+                self.get_logger().error(f"[HOME-DRIVE] Fehler: {exc}")
+                exc_str = str(exc).lower()
+                if "tolerance" in exc_str or "path_tolerance" in exc_str:
+                    self._publish_gui_status("tolerance_violation")
+                else:
+                    self._publish_gui_status("no_path")
+            finally:
+                with self.busy_lock:
+                    self.busy = False
+        threading.Thread(target=worker, daemon=True).start()
+
     def _subscription_health_check(self) -> None:
         with self.count_lock:
             count = self.pose_received_count
@@ -869,10 +897,21 @@ class UR3GripAndPlaceNode(Node):
             self._publish_gui_status("success")
 
         except Exception as exc:
-            self.get_logger().error(f"[ERROR] Ablauf fehlgeschlagen: {exc}", throttle_duration_sec=1)
             import traceback
+            exc_str = str(exc).lower()
+            self.get_logger().error(f"[ERROR] Ablauf fehlgeschlagen: {exc}", throttle_duration_sec=1)
             self.get_logger().error(f"[ERROR] Traceback:\n{traceback.format_exc()}")
-            self._publish_gui_status("failed")
+
+            if "tolerance" in exc_str or "path_tolerance" in exc_str:
+                self._publish_gui_status("tolerance_violation")
+            elif "keine trajektorie" in exc_str or "no path" in exc_str or "planning failed" in exc_str:
+                try:
+                    self._move_home()
+                except Exception as home_exc:
+                    self.get_logger().warn(f"[HOME] Rueckfahrt nach Fehler fehlgeschlagen: {home_exc}")
+                self._publish_gui_status("no_path")
+            else:
+                self._publish_gui_status("no_path")
         finally:
             with self.busy_lock:
                 self.busy = False

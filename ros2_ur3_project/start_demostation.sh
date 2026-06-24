@@ -6,6 +6,9 @@ cd "$(dirname "$0")/.."
 
 ROS_SETUP="source /opt/ros/humble/setup.bash && source /workspace/install/setup.bash"
 
+echo "Warte 20s auf vollständigen Systemstart..."
+sleep 20
+
 echo "========================================"
 echo "  Demostation UR3 Autostart"
 echo "========================================"
@@ -13,8 +16,12 @@ echo "========================================"
 echo "[1/5] Setze X11 Rechte..."
 xhost +local:docker
 
-echo "[2/5] Baue Docker Image..."
-docker build --network host -t ur3-ros2 -f ros2_ur3_project/Dockerfile ros2_ur3_project
+echo "[2/5] Baue Docker Image (wird übersprungen wenn bereits vorhanden)..."
+if ! docker image inspect ur3-ros2 >/dev/null 2>&1; then
+    docker build --network host -t ur3-ros2 -f ros2_ur3_project/Dockerfile ros2_ur3_project
+else
+    echo "    Image ur3-ros2 bereits vorhanden, überspringe Build."
+fi
 
 echo "[3/5] Starte Container..."
 docker rm -f demostation-ur3 >/dev/null 2>&1 || true

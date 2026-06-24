@@ -181,6 +181,7 @@ class D405ArucoThenToolOnceNode(Node):
         self.camera_frame = "camera_color_optical_frame"
 
         self.aruco_found = False
+        self._aruco_fresh_count = 0
         self.wait_for_enter = False
         self.scan_active = False
         self.scan_deadline = 0.0
@@ -367,6 +368,7 @@ class D405ArucoThenToolOnceNode(Node):
             with self.marker_lock:
                 self.marker_position = np.array(t, dtype=np.float64)
                 self.marker_rotation = np.array(r_mat, dtype=np.float64)
+                self._aruco_fresh_count += 1
 
             if not self.aruco_found:
                 self.aruco_found = True
@@ -378,10 +380,39 @@ class D405ArucoThenToolOnceNode(Node):
     def _on_scan_trigger(self, msg: Bool) -> None:
         if not msg.data:
             return
-        if not self.aruco_found:
-            self.get_logger().warn("[GUI-Trigger] ArUco noch nicht erkannt — Scan ignoriert")
+        self.get_logger().info("[GUI-Trigger] Scan-Trigger empfangen, vermesse ArUco neu...")
+        threading.Thread(target=self._rescan_aruco_then_start, daemon=True).start()
+
+    def _rescan_aruco_then_start(self) -> None:
+        # ArUco-Filter zurücksetzen für frische Messung an der aktuellen Kameraposition
+        with self.marker_lock:
+            self.marker_filtered_tvec = None
+            self.marker_filtered_rvec = None
+            self.aruco_found = False
+            self._aruco_fresh_count = 0
+
+        self.get_logger().info("[ArUco-Reset] Filter zurückgesetzt, warte auf frische Vermessung...")
+
+        SETTLE_FRAMES = 5  # ~1s bei 5fps, Kamera an Scan-Position
+        deadline = time.time() + 10.0
+        while time.time() < deadline:
+            if not rclpy.ok():
+                return
+            with self.marker_lock:
+                count = self._aruco_fresh_count
+            if count >= SETTLE_FRAMES:
+                break
+            time.sleep(0.1)
+
+        with self.marker_lock:
+            count = self._aruco_fresh_count
+
+        if count < 1:
+            self.get_logger().warn("[ArUco-Reset] ArUco nicht erkannt — Scan abgebrochen")
+            self._publish_status("TOOL_SCAN_NOT_FOUND")
             return
-        self.get_logger().info("[GUI-Trigger] Scan-Trigger empfangen, starte Zangen-Erkennung")
+
+        self.get_logger().info(f"[ArUco-Reset] Neu vermessen ({count} Frames), starte Scan")
         self._start_tool_scan_once()
 
     def _start_tool_scan_once(self) -> None:
@@ -563,7 +594,6 @@ class D405ArucoThenToolOnceNode(Node):
         pose.pose.orientation.z = aqz
         pose.pose.orientation.w = aqw
 
-        self.pose_pub.publish(pose)
         p = pose.pose.position
         avg_fitness = np.mean([r["fitness"] for r in self._scan_results])
         avg_rmse = np.mean([r["rmse"] for r in self._scan_results])
@@ -576,6 +606,22 @@ class D405ArucoThenToolOnceNode(Node):
             f"Template: {dominant_template} (avg fitness={avg_fitness:.4f}, avg rmse={avg_rmse:.4f})"
         )
 
+        # Horizontalerkennung VOR Pose-Publish: nur für lang/kurz (Reflexionsproblem bei 0°/90°)
+        if "lang" in dominant_template or "kurz" in dominant_template:
+            import math
+            yaw_deg = math.degrees(math.atan2(avg_r[1, 0], avg_r[0, 0])) % 360.0
+            dist_to_horizontal = min(abs(yaw_deg - 90.0), abs(yaw_deg - 270.0))
+            HORIZONTAL_THRESHOLD_DEG = 10.0
+            if dist_to_horizontal < HORIZONTAL_THRESHOLD_DEG:
+                self.get_logger().warn(
+                    f"[HORIZONTAL] Yaw={yaw_deg:.1f}° (Abstand zu 90°/270°: {dist_to_horizontal:.1f}°) — Zange waagerecht"
+                )
+                self.scan_active = False
+                self._publish_status("horizontal_warning")
+                self.get_logger().info("═══ HORIZONTAL WARNING ═══")
+                return
+
+        self.pose_pub.publish(pose)
         self.scan_active = False
         self._publish_status("TOOL_SCAN_OK")
         self.get_logger().info("═══ TOOL SCAN OK ═══")

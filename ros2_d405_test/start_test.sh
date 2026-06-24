@@ -9,6 +9,9 @@ cd "$(dirname "$0")"
 
 ROS_SETUP="source /opt/ros/humble/setup.bash && source /workspace/install/setup.bash"
 
+echo "Warte 20s auf vollständigen Systemstart..."
+sleep 20
+
 echo "========================================"
 echo "  Demostation D405 Autostart"
 echo "========================================"
@@ -16,8 +19,12 @@ echo "========================================"
 echo "[1/6] Setze X11 Rechte..."
 xhost +local:docker
 
-echo "[2/6] Baue Docker Image..."
-docker build --network host -t d405-test-image .
+echo "[2/6] Baue Docker Image (wird übersprungen wenn bereits vorhanden)..."
+if ! docker image inspect d405-test-image >/dev/null 2>&1; then
+    docker build --network host -t d405-test-image .
+else
+    echo "    Image d405-test-image bereits vorhanden, überspringe Build."
+fi
 
 echo "[3/6] Starte Container..."
 if docker compose version >/dev/null 2>&1; then

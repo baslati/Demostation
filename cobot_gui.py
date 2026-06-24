@@ -1,5 +1,5 @@
 """
-Cobot Bediener-GUI — Streamlit
+Cobot Bediener-GUI - Streamlit
 ZirkulEA · UR3e + Jetson Orin NX · ROS 2 Humble
 """
 import subprocess
@@ -8,7 +8,7 @@ import threading
 import streamlit as st
 
 st.set_page_config(
-    page_title="Cobot — ZirkulEA",
+    page_title="Cobot - ZirkulEA",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -31,9 +31,11 @@ IDLE              = "IDLE"
 EXECUTING_STORAGE = "EXECUTING_STORAGE"
 SCANNING          = "SCANNING"
 EXECUTING_STOW    = "EXECUTING_STOW"
-WARN_HORIZONTAL   = "WARN_HORIZONTAL"
-WARN_INACCURATE   = "WARN_INACCURATE"
-WARN_FAILED       = "WARN_FAILED"
+HOMING_FOR_SCAN         = "HOMING_FOR_SCAN"
+WARN_HORIZONTAL         = "WARN_HORIZONTAL"
+WARN_DETECTION_FAILED   = "WARN_DETECTION_FAILED"
+WARN_NO_PATH            = "WARN_NO_PATH"
+WARN_TOLERANCE_VIOLATION = "WARN_TOLERANCE_VIOLATION"
 
 PLIER_LABELS = {
     "breitv1_clean_direction": "Breite Zange",
@@ -50,6 +52,7 @@ class CobotGuiNode(Node):
         # Publisher
         self.scan_trigger_pub    = self.create_publisher(Bool,   "/gui/scan_trigger",    10)
         self.plier_selection_pub = self.create_publisher(String, "/gui/plier_selection", 10)
+        self.home_drive_pub      = self.create_publisher(Bool,   "/gui/home_drive",      10)
 
         # Eingehende Status-Nachrichten (thread-safe über Lock)
         self._lock = threading.Lock()
@@ -89,6 +92,11 @@ class CobotGuiNode(Node):
         msg.data = True
         self.scan_trigger_pub.publish(msg)
 
+    def publish_home_drive(self):
+        msg = Bool()
+        msg.data = True
+        self.home_drive_pub.publish(msg)
+
 
 def get_node() -> "CobotGuiNode | None":
     """Singleton-Pattern: Node wird einmal pro Session erstellt."""
@@ -103,6 +111,8 @@ def get_node() -> "CobotGuiNode | None":
         rclpy.spin_once(node, timeout_sec=0.05)
         return node
     except Exception as e:
+        import traceback
+        print(f"[DEBUG] get_node() Exception: {e}\n{traceback.format_exc()}", flush=True)
         st.sidebar.warning(f"ROS2 nicht verfügbar: {e}")
         return None
 
@@ -115,7 +125,6 @@ def _d(key, val):
 
 _d("state",       IDLE)
 _d("active_plier", None)   # Template-ID der laufenden Aktion
-_d("warn_shown",  False)   # Verhindert doppeltes Dialog-Öffnen
 
 
 # ─── State-Machine Übergänge ─────────────────────────────────────────────────
@@ -123,15 +132,16 @@ _d("warn_shown",  False)   # Verhindert doppeltes Dialog-Öffnen
 def to_idle():
     st.session_state.state        = IDLE
     st.session_state.active_plier = None
-    st.session_state.warn_shown   = False
 
 
 def start_storage(template_id: str):
     st.session_state.state        = EXECUTING_STORAGE
     st.session_state.active_plier = template_id
     node = get_node()
+    print(f"[DEBUG] start_storage: template={template_id}, node={'OK' if node else 'None'}", flush=True)
     if node:
         node.publish_plier_selection(template_id)
+        print(f"[DEBUG] publish_plier_selection gesendet: {template_id}", flush=True)
 
 
 def start_scan():
@@ -141,14 +151,20 @@ def start_scan():
     if node:
         node.publish_scan_trigger()
 
+def start_homing_for_scan():
+    st.session_state.state        = HOMING_FOR_SCAN
+    st.session_state.active_plier = None
+    node = get_node()
+    if node:
+        node.publish_home_drive()
+
 
 def to_executing_stow():
     st.session_state.state = EXECUTING_STOW
 
 
 def to_warn(warn_state: str):
-    st.session_state.state      = warn_state
-    st.session_state.warn_shown = False
+    st.session_state.state = warn_state
 
 
 # ─── ROS2-Statusverarbeitung (einmal pro Rerun) ───────────────────────────────
@@ -164,19 +180,21 @@ def process_ros_messages():
 
     # Roboter-Feedback auswerten
     if robot_status:
-        if current == EXECUTING_STORAGE:
+        if current == HOMING_FOR_SCAN and robot_status == "home_reached":
+            start_scan()
+            st.rerun()
+        if current in (EXECUTING_STORAGE, EXECUTING_STOW, HOMING_FOR_SCAN):
             if robot_status == "success":
                 to_idle()
                 st.rerun()
-            elif robot_status in ("failed", "gripper_opened"):
-                to_warn(WARN_FAILED)
+            elif robot_status == "no_path":
+                to_warn(WARN_NO_PATH)
                 st.rerun()
-        elif current == EXECUTING_STOW:
-            if robot_status == "success":
-                to_idle()
+            elif robot_status == "tolerance_violation":
+                to_warn(WARN_TOLERANCE_VIOLATION)
                 st.rerun()
-            elif robot_status in ("failed", "gripper_opened"):
-                to_warn(WARN_FAILED)
+            elif robot_status in ("failed",):
+                to_warn(WARN_NO_PATH)
                 st.rerun()
 
     # Kamera-Scan-Feedback auswerten
@@ -187,63 +205,65 @@ def process_ros_messages():
                 to_executing_stow()
                 st.rerun()
             elif detection_status == "TOOL_SCAN_NOT_FOUND":
-                to_warn(WARN_INACCURATE)
+                to_warn(WARN_DETECTION_FAILED)
                 st.rerun()
             elif detection_status == "horizontal_warning":
                 to_warn(WARN_HORIZONTAL)
                 st.rerun()
-            elif detection_status == "inaccurate":
-                to_warn(WARN_INACCURATE)
-                st.rerun()
-
-
-# ─── Warn-Dialoge ────────────────────────────────────────────────────────────
-
-@st.dialog("Hinweis")
-def warn_horizontal_dialog():
-    st.warning("**Bitte Zange schräg ablegen.**\n\nDie Zange liegt waagerecht — der Roboter kann sie so nicht greifen.")
-    if st.button("OK", use_container_width=True, type="primary"):
-        to_idle()
-        st.rerun()
-
-
-@st.dialog("Hinweis")
-def warn_inaccurate_dialog():
-    st.warning("**Erkennung ungenau — bitte Zange neu positionieren.**\n\nDer Roboter fährt zur Kameraposition und wartet.")
-    if st.button("OK", use_container_width=True, type="primary"):
-        to_idle()
-        st.rerun()
-
-
-@st.dialog("Hinweis")
-def warn_failed_dialog():
-    st.error("**Greifer geöffnet — bitte Zange neu platzieren.**\n\nDer Greifer wurde geöffnet. Bitte Zange korrekt ablegen und erneut versuchen.")
-    if st.button("OK", use_container_width=True, type="primary"):
-        to_idle()
-        st.rerun()
 
 
 # ─── CSS ─────────────────────────────────────────────────────────────────────
 
 CSS = """
 <style>
+/* ── Grundlayout ── */
 #MainMenu, footer, header, .stDeployButton { visibility: hidden; }
 .block-container { padding: 1rem 2rem 1rem !important; max-width: 100% !important; }
-.stApp { background: #F5F6F8; }
 
+/* App-Hintergrund: dezentes #F5F6F8 statt reinem Weiß,
+   damit Statusboxen und Buttons visuell hervorstechen */
+.stApp { background: #F5F6F8 !important; }
+
+/* ── Schriftart ── */
+.stApp, .stApp * {
+    font-family: Arial, sans-serif !important;
+}
+h1, h2, h3 { color: #144466 !important; font-family: Arial, sans-serif !important; }
+
+/* ── Statusboxen ── */
 .status-box {
     border-radius: 10px; padding: 18px 22px;
     font-size: 18px; font-weight: 600; margin-bottom: 18px;
     display: flex; align-items: center; gap: 12px;
+    font-family: Arial, sans-serif;
 }
-.status-idle    { background: #E8F4F1; border: 1.5px solid #009682; color: #00695C; }
-.status-busy    { background: #FFF8E1; border: 1.5px solid #F9A825; color: #795548; }
-.status-warn    { background: #FFF3E0; border: 1.5px solid #EF6C00; color: #BF360C; }
-.status-error   { background: #FFEBEE; border: 1.5px solid #C62828; color: #B71C1C; }
 
+/* idle — Türkis/Petrol #009682, Hintergrund helles Teal */
+.status-idle  { background: #EBF5F4; border: 1.5px solid #009682; color: #144466; }
+
+/* busy — Warngelb #EEB70D, helles Gelb */
+.status-busy  { background: #FEF8E0; border: 1.5px solid #EEB70D; color: #2C333E; }
+
+/* warn — ebenfalls #EEB70D, etwas wärmerer Gelbton für Unterschied zu busy */
+.status-warn  { background: #FFF3CC; border: 1.5px solid #EEB70D; color: #2C333E; }
+
+/* error — Fehlerrot #B2372C, helles Rosa */
+.status-error { background: #FDECEA; border: 1.5px solid #B2372C; color: #B2372C; }
+
+/* ── Buttons ── */
 div[data-testid="stButton"] button {
-    border-radius: 8px !important; font-weight: 700 !important;
-    font-size: 16px !important; height: 54px !important;
+    border-radius: 8px !important;
+    font-weight: 900 !important;
+    font-size: 24px !important;
+    height: 54px !important;
+    font-family: Arial, sans-serif !important;
+    background-color: #009682 !important;
+    color: #FFFFFF !important;
+    border: none !important;
+}
+div[data-testid="stButton"] button:hover {
+    background-color: #00838F !important;
+    color: #FFFFFF !important;
 }
 </style>
 """
@@ -251,21 +271,35 @@ div[data-testid="stButton"] button {
 
 # ─── Ausgabezeile ─────────────────────────────────────────────────────────────
 
+WARN_MESSAGES = {
+    WARN_HORIZONTAL:
+        "Bitte legen Sie die Zange leicht schräg ab.",
+    WARN_DETECTION_FAILED:
+        "Die Zange konnte nicht korrekt erkannt werden, bitte verändern Sie die Position.",
+    WARN_NO_PATH:
+        "Die Zange liegt nicht im möglichen Arbeitsbereich, bitte legen Sie sie in der Mitte der grauen Fläche ab.",
+    WARN_TOLERANCE_VIOLATION:
+        "Positionserror des UR3e: Bitte bewegen Sie den Roboter manuell über das Teach-Pendant. "
+        "Wenn die Remote-Kontrolle am UR3 wieder aktiviert ist, klicken Sie auf Zurücksetzen.",
+}
+
 def render_status_line():
     state = st.session_state.state
     plier = st.session_state.active_plier
     plier_label = PLIER_LABELS.get(plier, plier) if plier else ""
 
     if state == IDLE:
-        cls, icon, text = "status-idle", "✅", "Bereit — Wählen Sie eine Zange zum Holen."
+        cls, icon, text = "status-idle", "✅", "Bereit — Wenn die graue Fläche leer ist, wählen Sie eine Zange aus dem Lager. Oder lassen Sie eine Zange von der grauen Fläche aufräumen."
     elif state == EXECUTING_STORAGE:
         cls, icon, text = "status-busy", "⚙️", f"{plier_label} wird aus dem Lager geholt …"
+    elif state == HOMING_FOR_SCAN:
+        cls, icon, text = "status-busy", "⚙️", "Roboter fährt zur Kameraposition …"
     elif state == SCANNING:
         cls, icon, text = "status-busy", "🔍", "Scan läuft — Zange auf grauer Fläche wird erkannt …"
     elif state == EXECUTING_STOW:
         cls, icon, text = "status-busy", "⚙️", "Zange wird eingelagert …"
-    elif state in (WARN_HORIZONTAL, WARN_INACCURATE, WARN_FAILED):
-        cls, icon, text = "status-warn", "⚠️", "Bitte Hinweis im Dialogfenster bestätigen."
+    elif state in WARN_MESSAGES:
+        cls, icon, text = "status-error", "⚠️", WARN_MESSAGES[state]
     else:
         cls, icon, text = "status-idle", "ℹ️", state
 
@@ -273,6 +307,14 @@ def render_status_line():
         f'<div class="status-box {cls}">{icon}&nbsp; {text}</div>',
         unsafe_allow_html=True,
     )
+    if state in WARN_MESSAGES:
+        if st.button("✓ Zurücksetzen", key="btn_reset_warn", type="secondary"):
+            if state == WARN_TOLERANCE_VIOLATION:
+                node = get_node()
+                if node:
+                    node.publish_home_drive()
+            to_idle()
+            st.rerun()
 
 
 # ─── Haupt-Render ─────────────────────────────────────────────────────────────
@@ -282,18 +324,6 @@ process_ros_messages()
 
 # CSS
 st.markdown(CSS, unsafe_allow_html=True)
-
-# Warn-Dialoge öffnen (nur einmal auslösen)
-state = st.session_state.state
-if state == WARN_HORIZONTAL and not st.session_state.warn_shown:
-    st.session_state.warn_shown = True
-    warn_horizontal_dialog()
-elif state == WARN_INACCURATE and not st.session_state.warn_shown:
-    st.session_state.warn_shown = True
-    warn_inaccurate_dialog()
-elif state == WARN_FAILED and not st.session_state.warn_shown:
-    st.session_state.warn_shown = True
-    warn_failed_dialog()
 
 # Ausgabezeile
 render_status_line()
@@ -305,7 +335,7 @@ col_reboot, col_breit, col_lang, col_kurz, col_aufraeum = st.columns([1, 2, 2, 2
 
 with col_reboot:
     if st.button("Reboot", key="btn_reboot", use_container_width=True, type="secondary"):
-        subprocess.Popen(["reboot"])
+        subprocess.Popen(["bash", "-c", "echo b > /proc/sysrq-trigger"])
         to_idle()
         st.rerun()
 
@@ -330,11 +360,11 @@ with col_kurz:
 with col_aufraeum:
     if st.button("Aufräumen", key="btn_aufraeum", use_container_width=True,
                  type="secondary", disabled=busy):
-        start_scan()
+        start_homing_for_scan()
         st.rerun()
 
 # Auto-Rerun während Ausführung (wartet auf ROS2-Feedback)
-if st.session_state.state in (EXECUTING_STORAGE, SCANNING, EXECUTING_STOW):
+if st.session_state.state in (EXECUTING_STORAGE, HOMING_FOR_SCAN, SCANNING, EXECUTING_STOW):
     import time
     time.sleep(0.3)
     st.rerun()

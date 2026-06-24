@@ -66,10 +66,13 @@ STORAGE_PICK_CONFIG: Dict[str, Dict] = {
         "pick_y": 0.175,
         "pick_z": 0.0,
         "pick_yaw": math.pi * 1.1,
-        "pick_center_offset_y_m": 0.01,  # pick_center +1 cm entlang Greifer-Y verschieben
-        "approach_shift_m": 0.03,   # Verschieben entlang Greifer-Y vor dem Schliessen
-        "post_pick_lift_m": 0.02,   # Vertikaler Anstieg nach dem Greifen
-        "provide_tip_retreat_y_m": 0.01,   # Rückzug in +Y nach Greifer öffnen (verhakt sonst)
+        "pick_center_offset_y_m": 0.01,
+        "approach_shift_m": 0.03,
+        "post_pick_lift_m": 0.02,
+        "provide_tip_retreat_y_m": 0.01,
+        "provide_x":   0.17,  # von rechts, Tischkoordinaten
+        "provide_y":   -0.055, # von oben,  Tischkoordinaten
+        "provide_yaw": math.pi, #pi ist spitze nach oben 
     },
     "langv1_clean_direction": {
         "pick_mode": "table",
@@ -79,30 +82,39 @@ STORAGE_PICK_CONFIG: Dict[str, Dict] = {
         "pick_yaw": math.pi * 1.25,
         "approach_shift_m": 0.03,
         "post_pick_lift_m": 0.02,
+        "provide_x":   0.17,  # von rechts, Tischkoordinaten
+        "provide_y":   -0.085, # von oben,  Tischkoordinaten
+        "provide_yaw": math.pi + 0.4*math.pi, #pi ist spitze nach oben 
     },
     "kurzv3_clean_direction": {
         "pick_mode": "joint",       # Gelenkwinkel-basiertes Greifen (schraege Halterung)
-        # TODO: Mit /joint_states ausmessen und hier eintragen
+        "provide_x":   0.17,  # von rechts, Tischkoordinaten
+        "provide_y":   -0.055, # von oben,  Tischkoordinaten
+        "provide_yaw": math.pi, #pi ist spitze nach oben 
         "hover_joint_config": {
-            "shoulder_pan_joint":  0.0,
-            "shoulder_lift_joint": 0.0,
-            "elbow_joint":         0.0,
-            "wrist_1_joint":       0.0,
-            "wrist_2_joint":       0.0,
-            "wrist_3_joint":       0.0,
+            "shoulder_pan_joint":  2.5407705307006836,
+            "shoulder_lift_joint": -0.9642239373973389,
+            "elbow_joint":         1.0629828611956995,
+            "wrist_1_joint":       -0.7397545141032715,
+            "wrist_2_joint":       -0.6835563818560999,
+            "wrist_3_joint":       4.454668045043945,
         },
-        # TODO: Mit /joint_states ausmessen und hier eintragen
         "grasp_joint_config": {
-            "shoulder_pan_joint":  0.0,
-            "shoulder_lift_joint": 0.0,
-            "elbow_joint":         0.0,
-            "wrist_1_joint":       0.0,
-            "wrist_2_joint":       0.0,
-            "wrist_3_joint":       0.0,
+            "shoulder_pan_joint":  2.5375688076019287,
+            "shoulder_lift_joint": -0.9015786808780213,
+            "elbow_joint":         1.189467732106344,
+            "wrist_1_joint":       -0.8685987752727051,
+            "wrist_2_joint":       -0.6642287413226526,
+            "wrist_3_joint":       4.412913799285889,
         },
-        # Gelenkwinkel nach dem Greifen (Rueckzug aus der Halterung, typisch = hover_joint_config)
-        # TODO: Ggf. eigene Rueckzug-Pose ausmessen; sonst None -> faehrt direkt zur Home-Pose
-        "retreat_joint_config": None,
+        "retreat_joint_config": {
+            "shoulder_pan_joint":  2.5109829902648926,
+            "shoulder_lift_joint": -0.9127864998630066,
+            "elbow_joint":         0.9727051893817347,
+            "wrist_1_joint":       -0.621615008716919,
+            "wrist_2_joint":       -0.6867693106280726,
+            "wrist_3_joint":       4.388481140136719,
+        },
         "post_pick_lift_m": 0.05,   # nur fuer Fallback (wird bei joint-mode nicht als Kartesisch genutzt)
     },
 }
@@ -139,6 +151,7 @@ ACTION_TIMEOUT_SEC       = 30.0
 IK_SERVICE_TIMEOUT_SEC   = 20.0
 JOINT_STATE_WAIT_SEC     = 10.0
 STARTUP_MOVE_HOME        = True
+
 
 HOLD_SECONDS  = 0.5
 OPEN_SECONDS  = 0.5
@@ -686,10 +699,14 @@ class UR3ProvideFromStorageNode(Node):
     # ------------------------------------------------------------------
 
     def _do_provide(self, pick_cfg: Dict = None) -> None:
+        cfg = pick_cfg or {}
+        prov_x   = cfg.get("provide_x",   PROVIDE_TABLE_X_M)
+        prov_y   = cfg.get("provide_y",   PROVIDE_TABLE_Y_M)
+        prov_yaw = cfg.get("provide_yaw", PROVIDE_YAW_RAD)
         q_provide = rpy_to_quat(
-            GRIPPER_FIXED_ROLL, GRIPPER_FIXED_PITCH, PROVIDE_YAW_RAD + TOOL_YAW_OFFSET
+            GRIPPER_FIXED_ROLL, GRIPPER_FIXED_PITCH, prov_yaw + TOOL_YAW_OFFSET
         )
-        p_provide = self._table_to_base(PROVIDE_TABLE_X_M, PROVIDE_TABLE_Y_M, PROVIDE_Z_M)
+        p_provide = self._table_to_base(prov_x, prov_y, PROVIDE_Z_M)
         if p_provide[2] < MIN_TARGET_Z_IN_BASE_M:
             p_provide[2] = MIN_TARGET_Z_IN_BASE_M
 
@@ -794,9 +811,13 @@ class UR3ProvideFromStorageNode(Node):
 
         except Exception as exc:
             import traceback
+            exc_str = str(exc).lower()
             self.get_logger().error(f"[ERROR] Ablauf fehlgeschlagen: {exc}")
             self.get_logger().error(f"[ERROR] Traceback:\n{traceback.format_exc()}")
-            self._publish_gui_status("failed")
+            if "tolerance" in exc_str or "path_tolerance" in exc_str:
+                self._publish_gui_status("tolerance_violation")
+            else:
+                self._publish_gui_status("no_path")
         finally:
             with self.busy_lock:
                 self.busy = False
