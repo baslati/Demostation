@@ -46,6 +46,15 @@ docker exec demostation-ur3 bash -c \
    > /tmp/colcon.log 2>&1"
 echo "    Build fertig."
 
+echo "Warte auf UR3 Controller (192.168.122.20)..."
+UR_ROBOT_IP="192.168.122.20"
+until ping -c 1 -W 1 "$UR_ROBOT_IP" >/dev/null 2>&1; do
+    echo "    UR3 noch nicht erreichbar, warte 2s..."
+    sleep 2
+done
+echo "    UR3 ist erreichbar, warte noch 2 Minuten zum Initialisieren..."
+sleep 120
+
 echo "[5/5] Starte ROS Launch + RViz + Nodes..."
 docker exec -d demostation-ur3 bash -c \
   "$ROS_SETUP && ros2 launch custom_ur_moveit_config combined_ur3e.launch.py \
