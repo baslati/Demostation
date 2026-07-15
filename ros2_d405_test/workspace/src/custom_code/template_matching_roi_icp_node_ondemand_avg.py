@@ -47,18 +47,26 @@ ARUCO_FILTER_ALPHA = 0.12
 ARUCO_MAX_JUMP_M = 0.02
 ARUCO_DEADBAND_M = 0.0015
 DETECTED_LATCH_PUBLISH_RATE_HZ = 10.0
+# Anzahl aufeinanderfolgender Frames, bevor die initiale ArUco-Erkennung als
+# bestaetigt gilt (kein Timeout - es wird solange gesucht bis der Roboter in
+# Kameraposition ist und der Marker stabil im Bild liegt).
+ARUCO_INITIAL_SETTLE_FRAMES = 5
 
 # One-shot tool scan timeout
 TOOL_TIMEOUT_SEC = 12.0
 MIN_CLOUD_STAMP_AFTER_SCAN_SEC = 0.10
 
 # Template / ROI / ICP
+DISABLE_KURZE_ZANGE_TEMPLATE = True  # deaktiviert "kurzv3_clean_direction" im Template-Scan
+
 TEMPLATE_DIR = "/workspace/src/custom_packages/custom_code/templates"
 TEMPLATE_SCAN_LIST = [
     "breitv1_clean_direction",
     "kurzv3_clean_direction",
     "langv1_clean_direction",
 ]
+if DISABLE_KURZE_ZANGE_TEMPLATE:
+    TEMPLATE_SCAN_LIST = [t for t in TEMPLATE_SCAN_LIST if t != "kurzv3_clean_direction"]
 CROP_BOUNDS_MARKER = (-0.03, 0.38, -0.22, 0.03, 0.01, 0.03)
 ROI_Z_ADJUST_START_M = 0.000
 ROI_Z_ADJUST_STEP_M = 0.002
@@ -369,8 +377,15 @@ class D405ArucoThenToolOnceNode(Node):
                 self.marker_position = np.array(t, dtype=np.float64)
                 self.marker_rotation = np.array(r_mat, dtype=np.float64)
                 self._aruco_fresh_count += 1
+                fresh_count = self._aruco_fresh_count
 
+            # Erst nach mehreren stabilen Frames als "wirklich erkannt" werten,
+            # damit ein einzelner Fehl-Read nicht sofort als Treffer durchgeht.
+            # Es gibt hier bewusst keinen Timeout: die Suche laeuft weiter,
+            # z.B. waehrend der Roboter noch in die Kameraposition faehrt.
             if not self.aruco_found:
+                if fresh_count < ARUCO_INITIAL_SETTLE_FRAMES:
+                    return
                 self.aruco_found = True
                 self.wait_for_enter = True
                 self.get_logger().info(f"✓ ArUco erkannt und publiziert: {MARKER_FRAME}")

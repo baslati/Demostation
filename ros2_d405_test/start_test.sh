@@ -9,6 +9,21 @@ cd "$(dirname "$0")"
 
 ROS_SETUP="source /opt/ros/humble/setup.bash && source /workspace/install/setup.bash"
 
+WATCHDOG_PID_FILE="/tmp/host_recovery_watchdog.pid"
+
+# Beendet gezielt die in WATCHDOG_PID_FILE hinterlegte Watchdog-Instanz,
+# statt per "pkill -f host_recovery_watchdog.sh" blind irgendeine (evtl.
+# gerade erst neu gestartete) Instanz zu treffen.
+stop_old_watchdog() {
+    if [ -f "$WATCHDOG_PID_FILE" ]; then
+        local old_pid
+        old_pid="$(cat "$WATCHDOG_PID_FILE")"
+        if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
+            kill "$old_pid" 2>/dev/null || true
+        fi
+    fi
+}
+
 echo "Warte auf Systemstart und D405-Kamera (USB 8086:0b5b)..."
 sleep 10
 timeout=120
@@ -39,25 +54,21 @@ else
 fi
 
 echo "[3/6] Starte Container..."
+# Zweite Verteidigungslinie: falls hier noch ein Container mit diesem Namen
+# haengt (z.B. weil ein vorheriger Neustart nicht sauber durchgelaufen ist),
+# entfernen statt riskieren, dass "docker compose up -d" ihn einfach nur
+# reaktiviert statt einen wirklich frischen Container zu erzeugen. Analog
+# zum bestehenden "docker rm -f demostation-ur3" in start_demostation.sh.
+docker rm -f d405_test_container >/dev/null 2>&1 || true
 if docker compose version >/dev/null 2>&1; then
     docker compose up -d
 else
     docker-compose up -d
 fi
 
-echo "[4/6] Starte Kamera..."
-docker exec -d d405_test_container bash -c \
-  "$ROS_SETUP && ros2 launch realsense2_camera rs_launch.py \
-     depth_module.depth_profile:=848x480x5 \
-     depth_module.color_profile:=848x480x5 \
-     pointcloud.enable:=true \
-     align_depth.enable:=true \
-     enable_sync:=true \
-     decimation_filter.enable:=true \
-     spatial_filter.enable:=false \
-     temporal_filter.enable:=true \
-     hole_filling_filter.enable:=false \
-     > /tmp/camera.log 2>&1"
+echo "[4/6] Starte Kamera (mit Watchdog gegen USB-Aussetzer)..."
+docker cp "$(dirname "$0")/camera_watchdog.sh" d405_test_container:/tmp/camera_watchdog.sh
+docker exec -d d405_test_container bash -c "chmod +x /tmp/camera_watchdog.sh && /tmp/camera_watchdog.sh"
 
 echo "    Warte auf Kamera-Init (8s)..."
 sleep 8
@@ -78,6 +89,11 @@ docker exec -d d405_test_container bash -c \
      --server.port 8501 \
      --server.address 0.0.0.0 \
      > /tmp/streamlit.log 2>&1"
+
+echo "[Watchdog] Starte Wiederherstellungs-Watchdog (Host)..."
+stop_old_watchdog
+nohup "$(dirname "$0")/host_recovery_watchdog.sh" >> /tmp/d405_host_watchdog.log 2>&1 &
+disown
 
 sleep 4
 
@@ -100,9 +116,10 @@ echo "========================================"
 echo "  Alles gestartet. Shell freigegeben."
 echo "  Logs: /tmp/camera.log /tmp/detection.log"
 echo "========================================"
-docker exec -it d405_test_container bash
+docker exec -it d405_test_container bash || true
 
 # Aufräumen beim Beenden
 echo "Stoppe Container..."
+stop_old_watchdog
 docker compose down
 pkill -f chromium 2>/dev/null || true

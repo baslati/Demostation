@@ -2,10 +2,16 @@
 Cobot Bediener-GUI - Streamlit
 ZirkulEA · UR3e + Jetson Orin NX · ROS 2 Humble
 """
-import subprocess
+import os
 import threading
 
 import streamlit as st
+
+# Trigger-Datei fuer den Host-Watchdog (host_recovery_watchdog.sh): liegt im
+# bind-gemounteten custom_code-Ordner, damit sie sowohl im Container als auch
+# vom Host aus sichtbar ist. Der Watchdog stoppt/startet beide Container neu,
+# sobald diese Datei auftaucht (siehe Reboot-Button weiter unten).
+REBOOT_TRIGGER_FILE = "/workspace/src/custom_packages/custom_code/.reboot_request"
 
 st.set_page_config(
     page_title="Cobot - ZirkulEA",
@@ -335,7 +341,12 @@ col_reboot, col_breit, col_lang, col_kurz, col_aufraeum = st.columns([1, 2, 2, 2
 
 with col_reboot:
     if st.button("Reboot", key="btn_reboot", use_container_width=True, type="secondary"):
-        subprocess.Popen(["bash", "-c", "echo b > /proc/sysrq-trigger"])
+        # Harter Kernel-Reboot (sysrq) ersetzt durch sauberen Docker-Neustart:
+        # Trigger-Datei anlegen, der Host-Watchdog (host_recovery_watchdog.sh)
+        # stoppt und startet daraufhin beide Container ueber ihre .desktop-
+        # Kommandos neu.
+        os.makedirs(os.path.dirname(REBOOT_TRIGGER_FILE), exist_ok=True)
+        open(REBOOT_TRIGGER_FILE, "w").close()
         to_idle()
         st.rerun()
 

@@ -302,7 +302,9 @@ class UR3GripAndPlaceNode(Node):
         self.count_lock = threading.Lock()
         self.js_lock = threading.Lock()
         self.latest_joint_state = None
+        self.joint_state_ready = threading.Event()
         self.startup_done = False
+        self.startup_timer = None
 
         qos_pose = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -318,7 +320,7 @@ class UR3GripAndPlaceNode(Node):
         self.create_subscription(Bool, "/gui/home_drive", self._on_home_drive, 10)
 
         self.create_timer(2.0, self._subscription_health_check)
-        self.create_timer(0.5, self._startup_home_once)
+        self.startup_timer = self.create_timer(0.5, self._startup_home_once)
 
         self.get_logger().info("=======================================================")
         self.get_logger().info("  NODE BEREIT - WARTE AUF ZIELPOSE")
@@ -367,10 +369,9 @@ class UR3GripAndPlaceNode(Node):
         return out
 
     def _wait_future_result(self, fut, label: str, timeout_sec: float):
-        deadline = time.time() + timeout_sec
-        while rclpy.ok() and not fut.done() and time.time() < deadline:
-            time.sleep(0.01)
-        if not fut.done():
+        done_event = threading.Event()
+        fut.add_done_callback(lambda _f: done_event.set())
+        if not done_event.wait(timeout_sec) or not fut.done():
             raise RuntimeError(f"Timeout bei {label} nach {timeout_sec:.1f}s")
         exc = fut.exception()
         if exc is not None:
@@ -380,20 +381,19 @@ class UR3GripAndPlaceNode(Node):
     def _on_joint_state(self, msg: JointState) -> None:
         with self.js_lock:
             self.latest_joint_state = msg
+        if msg.name:
+            self.joint_state_ready.set()
 
     def _wait_for_joint_state(self, timeout_sec: float) -> bool:
-        deadline = time.time() + timeout_sec
-        while rclpy.ok() and time.time() < deadline:
-            with self.js_lock:
-                if self.latest_joint_state is not None and self.latest_joint_state.name:
-                    return True
-            time.sleep(0.05)
-        return False
+        return self.joint_state_ready.wait(timeout_sec)
 
     def _startup_home_once(self) -> None:
         if self.startup_done:
             return
         self.startup_done = True
+        if self.startup_timer is not None:
+            self.destroy_timer(self.startup_timer)
+            self.startup_timer = None
 
         if not STARTUP_MOVE_HOME:
             return
@@ -974,25 +974,11 @@ def set_tool_do(node: Node, pin: int, state: float, timeout: float = 5.0) -> boo
     req.state = float(state)
     fut = cli.call_async(req)
 
-    waiter = getattr(node, "_wait_future_result", None)
-    if callable(waiter):
-        try:
-            res = waiter(fut, "SetIO", timeout)
-        except Exception as exc:
-            node.get_logger().error(f"SetIO fehlgeschlagen: {exc}")
-            return False
-    else:
-        deadline = time.time() + timeout
-        while rclpy.ok() and not fut.done() and time.time() < deadline:
-            time.sleep(0.01)
-        if not fut.done():
-            node.get_logger().error(f"SetIO Timeout nach {timeout:.1f}s")
-            return False
-        exc = fut.exception()
-        if exc is not None:
-            node.get_logger().error(f"SetIO Exception: {exc}")
-            return False
-        res = fut.result()
+    try:
+        res = node._wait_future_result(fut, "SetIO", timeout)
+    except Exception as exc:
+        node.get_logger().error(f"SetIO fehlgeschlagen: {exc}")
+        return False
 
     ok = bool(getattr(res, "success", True)) if res is not None else False
     if not ok:

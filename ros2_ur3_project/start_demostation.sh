@@ -77,7 +77,7 @@ echo "========================================"
 echo "  Alles gestartet. Shell freigegeben."
 echo "  Logs: /tmp/launch.log /tmp/grip_and_place.log"
 echo "========================================"
-docker exec -it demostation-ur3 bash
+docker exec -it demostation-ur3 bash || true
 
 # Aufräumen beim Beenden
 echo "Stoppe Container..."

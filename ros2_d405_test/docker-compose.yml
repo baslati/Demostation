@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     image: d405-test-image
     container_name: d405_test_container
+    restart: unless-stopped
     network_mode: host
     dns:
       - 8.8.8.8
