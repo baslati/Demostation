@@ -1,8 +1,8 @@
 joint_limits:
   shoulder_pan_joint:
     has_position_limits: true
-    min_position: -0.5235   # -130°
-    max_position: 3.665             # 0°
+    min_position: 1.0472    # 60 deg
+    max_position: 3.4907    # 200 deg
     has_velocity_limits: true
     max_velocity: 1.0
     has_acceleration_limits: true
@@ -10,52 +10,46 @@ joint_limits:
 
   shoulder_lift_joint:
     has_position_limits: true
-    min_position: -2.2689280276   # -130°
-    max_position: 0.0             # 0°
+    min_position: -2.0944         # -120 deg
+    max_position: 0.0000          # 0 deg
     has_velocity_limits: true
     max_velocity: 1.0
     has_acceleration_limits: true
     max_acceleration: 0.6
 
   elbow_joint:
+    has_position_limits: true
+    min_position: 0.0873          # 5 deg
+    max_position: 2.9671          # 170 deg
     has_velocity_limits: true
     max_velocity: 1.0
     has_acceleration_limits: true
     max_acceleration: 0.6
 
   wrist_1_joint:
+    has_position_limits: true
+    min_position: -4.1888         # -240 deg
+    max_position: -0.3000         # -17 deg — verhindert Durchfahrt durch 0-Grad-Zone
     has_velocity_limits: true
     max_velocity: 1.0
     has_acceleration_limits: true
     max_acceleration: 0.8
 
   wrist_2_joint:
+    has_position_limits: true
+    min_position: -2.6180         # -150 deg
+    max_position: 0.3491          # 20 deg
     has_velocity_limits: true
     max_velocity: 1.0
     has_acceleration_limits: true
     max_acceleration: 0.8
 
   wrist_3_joint:
+    has_position_limits: true
+    min_position: 0.1745          # 10 deg
+    max_position: 6.2832          # 360 deg
     has_velocity_limits: true
     max_velocity: 1.0
     has_acceleration_limits: true
     max_acceleration: 1.0
 
-#default_robot_padding: 0.05          # 5 cm Puffer um den ganzen Roboter
-#default_robot_scale: 1.0             # Skalierung der Kollisionsmodelle (1.0 = original)
-#default_object_padding: 0.05         # 5 cm Puffer um ALLE Objekte in der Szene
-#default_attached_padding: 0.02       # Puffer um angehängte Objekte (z.B. Greiferladung)
-
-default_robot_padding: 0.05
-default_object_padding: 0.05
-default_attached_padding: 0.01
-
-default_robot_link_padding:
-  base_link: 0.02
-  shoulder_link: 0.03
-  upper_arm_link: 0.03
-  forearm_link: 0.03
-  wrist_1_link: 10.0
-  wrist_2_link: 0.02
-  wrist_3_link: 0.02
-  # deine Greifer-/Kamera-Links ergänzen

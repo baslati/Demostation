@@ -66,8 +66,6 @@ WORKDIR /workspace
 COPY workspace/src/ /workspace/src/
 
 
-COPY workspace/custom_code/custom_ur_description 	/workspace/custom_code/custom_ur_description
-COPY workspace/custom_code/custom_ur_moveit_config    	/workspace/custom_code/custom_ur_moveit_config
 
 RUN source /opt/ros/humble/setup.bash && \
     rosdep update && \
@@ -78,15 +76,35 @@ RUN source /opt/ros/humble/setup.bash && \
 	colcon build --symlink-install
 
 # optional: sicherstellen, dass pip aktuell ist
-RUN python3 -m pip install --no-cache-dir --upgrade pip
+RUN python3 -m pip install --no-cache-dir --upgrade pip --index-url https://pypi.org/simple
+
+
 
 # explizit PyPI nutzen (überschreibt evtl. gesetzten PIP_INDEX_URL)
 RUN pip install --no-cache-dir -i https://pypi.org/simple \
     "fastapi==0.112.*" "uvicorn[standard]==0.30.*"
 
+
+# Installiere native RTDE-Bibliothek aus dem sdurobotics Repo (Source Build)
+RUN apt-get update && apt-get install -y git cmake g++ make && \
+    git clone --branch master https://gitlab.com/sdurobotics/ur_rtde.git /tmp/UR_RTDE && \
+    cd /tmp/UR_RTDE && mkdir build && cd build && \
+    cmake .. && make && make install && \
+    ldconfig && \
+    rm -rf /tmp/UR_RTDE && rm -rf /var/lib/apt/lists/*
+
+# Open3D für die ARM64 Architektur des Jetson
+RUN pip3 install --index-url https://pypi.org/simple --ignore-installed open3d
+
+
 # Automatisch sourcen bei Shell
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
     echo "[ -f /workspace/install/setup.bash ] && source /workspace/install/setup.bash" >> /root/.bashrc
+
+
+COPY workspace/custom_code/custom_ur_description 	/workspace/custom_code/custom_ur_description
+  
+COPY workspace/custom_code/custom_ur_moveit_config    	/workspace/custom_code/custom_ur_moveit_config
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

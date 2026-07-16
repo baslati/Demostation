@@ -2,8 +2,10 @@
 <robot xmlns="http://www.ros.org/schema/srdf" name="ur3">
   <!-- MoveIt SRDF for UR3 -->
   <group name="ur_manipulator">
-    <chain base_link="base_link" tip_link="tool0" />
+    <chain base_link="base_link" tip_link="tcp" />
   </group>
+
+  <!-- TCP als Endeffektor für MoveIt -->
   <group_state name="home" group="ur_manipulator">
     <joint name="elbow_joint" value="0" />
     <joint name="shoulder_lift_joint" value="-1.5707" />
@@ -12,8 +14,11 @@
     <joint name="wrist_2_joint" value="0" />
     <joint name="wrist_3_joint" value="0" />
   </group_state>
+
+  <!-- Virtual Joint to attach the robot to the world -->
   <virtual_joint name="world_joint" type="fixed" parent_frame="world" child_link="base_link"/>
-  <disable_collisions link1="base_link" link2="base_link_inertia" reason="Adjacent" />
+
+  <!-- Disable collisions for the robot -->
   <disable_collisions link1="base_link_inertia" link2="shoulder_link" reason="Adjacent" />
   <disable_collisions link1="tool0" link2="wrist_1_link" reason="Never" />
   <disable_collisions link1="tool0" link2="wrist_2_link" reason="Never" />
@@ -24,29 +29,23 @@
   <disable_collisions link1="wrist_1_link" link2="wrist_2_link" reason="Adjacent" />
   <disable_collisions link1="wrist_1_link" link2="wrist_3_link" reason="Never" />
   <disable_collisions link1="wrist_2_link" link2="wrist_3_link" reason="Adjacent" />
-  <disable_collisions link1="base_link" link2="station" reason="Never" />
-  <disable_collisions link1="base_link" link2="station_cube" reason="Never" />
-  <disable_collisions link1="base_link" link2="station_top" reason="Never" />
-  <disable_collisions link1="base_link" link2="robot_mount_cylinder" reason="Never" />
-  <disable_collisions link1="tool0" link2="station" reason="Never" />
-  <disable_collisions link1="tool0" link2="station_cube" reason="Never" />
-  <disable_collisions link1="tool0" link2="station_top" reason="Never" />
-  <disable_collisions link1="tool0" link2="robot_mount_cylinder" reason="Never" />
 
-  <!-- Kollisionen base_link_inertia mit station_cube und uX_cube deaktiviert -->
-  <disable_collisions link1="base_link_inertia" link2="station_cube" reason="Never" />
+  <!-- Disable collisions with added links -->
   <disable_collisions link1="base_link_inertia" link2="u1_cube" reason="Never" />
-  <disable_collisions link1="base_link_inertia" link2="u2_cube" reason="Never" />
-  <disable_collisions link1="base_link_inertia" link2="u3_cube" reason="Never" />
-  <disable_collisions link1="base_link_inertia" link2="u4_cube" reason="Never" />
+  <disable_collisions link1="egpc40_gripper" link2="wrist_3_link" reason="Adjacent" />
 
-  <!-- Kollisionen zwischen Base und Tisch bleiben aktiv (aus ur_macro.srdf.xacro übernommen) -->
+  <!-- Disable collisions between base and table  -->
+
   <disable_collisions link1="station_cube" link2="u1_cube" reason="Table" />
-  <disable_collisions link1="station_cube" link2="u2_cube" reason="Table" />
-  <disable_collisions link1="station_cube" link2="u3_cube" reason="Table" />
   <disable_collisions link1="station_cube" link2="u4_cube" reason="Table" />
-  <disable_collisions link1="u1_cube" link2="u2_cube" reason="Table" />
-  <disable_collisions link1="u1_cube" link2="u3_cube" reason="Table" />
-  <disable_collisions link1="u2_cube" link2="u4_cube" reason="Table" />
-  <disable_collisions link1="u3_cube" link2="u4_cube" reason="Table" />
+  <disable_collisions link1="station_cube" link2="top_plate_cube" reason="Table" />
+
+  <disable_collisions link1="top_plate_cube" link2="u1_cube" reason="Table" />
+  <disable_collisions link1="top_plate_cube" link2="u4_cube" reason="Table" />
+  <disable_collisions link1="top_plate_cube" link2="custom_cylinder" reason="Table" />
+  <disable_collisions link1="top_plate_cube" link2="wbk1_cube" reason="Table" />
+  <disable_collisions link1="wbk1_cube" link2="wbk12_cube" reason="Table" />
+  <disable_collisions link1="top_plate_cube" link2="zangenablage" reason="Table" />
+
+  <disable_collisions link1="u1_cube" link2="u4_cube" reason="Table" />
 </robot>

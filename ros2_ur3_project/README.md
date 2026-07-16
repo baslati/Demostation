@@ -72,6 +72,8 @@ docker exec -it DOCKERNAME bash
 ```bash
 cd /workspace/custom_code
 python3 simple_ur_controller.py
+#Oder 
+python3 cube_manipulator.py
 ```
 ### 5. Fehlersuche
 

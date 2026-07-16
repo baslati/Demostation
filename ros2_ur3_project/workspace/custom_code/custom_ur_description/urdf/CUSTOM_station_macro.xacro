@@ -6,13 +6,18 @@
   <xacro:macro name="station" params="
     parent:=world
     size:=1.0        
-    height:=1.0          
+    height:=0.92
 	robot_mount_xy:='1.0 1.0'
 	robot_mount_z:=1.0 
 	robot_mount_yaw:=0.0   
+	aruco_on_station:='0.0 0.81 0.02'
 	rgba_grey:='0.4 0.4 0.4 0.5'
 	rgba_blue:='0.0 0.0 1.0 0.5'
-	rgba_black:='0.0 0.0 0.0 0.5'">
+	rgba_black:='0.0 0.0 0.0 0.8'
+	rgba_pink:='0.82 0.82 1.0 0.8'
+	rgba_light_grey:='0.8 0.8 0.8 1.0'
+	rgba_dark_grey:='0.6 0.6 0.6 1.0'">
+
   <!-- Bindet Station an world -->
 	<link name="station"/>
 	<joint name="world_to_station" type="fixed">
@@ -21,39 +26,96 @@
 	    <origin xyz="0 0 ${height}" rpy="0 0 0"/>
 	</joint>
 
-  <!-- Erstellt den Tisch, unterer Quader -->
+  <!-- Erstellt Tisch, unterer Quader -->
 	<link name="station_cube">
 		<visual>
 			<origin xyz="0 0 0" rpy="0 0 0"/>
-			<geometry><box size="${size} ${size} ${height}"/></geometry>
+			<geometry><box size="0.62 0.81 ${height}"/></geometry>
 			<material name="station_mat"><color rgba="${rgba_grey}"/></material>
 		</visual>
 		<collision>
 			<origin xyz="0 0 0" rpy="0 0 0"/>
-			<geometry><box size="${size} ${size} ${height}"/></geometry>
+			<geometry><box size="0.62 0.81 ${height}"/></geometry>
 		</collision>
 	</link>
 		<joint name="station_to_cube" type="fixed">
 			<parent link="station"/>
 			<child  link="station_cube"/>
 			<!-- hebt den Würfel um height/2, sodass seine Unterseite bei station.z=0 liegt -->
-			<origin xyz="${0.5*size} ${0.5*size} ${-0.5*height}" rpy="0 0 0"/>
+			<origin xyz="${0.5*0.62} ${0.5*0.81} ${-0.5*height}" rpy="0 0 0"/>
 	  	</joint>
+
+
 
   <!-- Definiert station_top, dort wird der Roboter gemountet -->
 	<link name="station_top"/>
-		<joint name="station_to_top" type="fixed">
-			<parent link="station"/>
+		<joint name="u1_cube_to_top" type="fixed">
+			<parent link="u1_cube"/>
 			<child  link="station_top"/>
-			<origin xyz="0.25 0.25 0.06" rpy="0 0 1.5708"/>
+			<origin xyz="0 0 0.013" rpy="0 0 1.5708"/>
+		</joint>
+
+	<!-- Zylinder: Mittelpunkt (0.05, 0.08, 0.02), Höhe 0.643, Durchmesser 0.06 -->
+	<link name="custom_cylinder">
+		<visual>
+			<origin xyz="0 0 0" rpy="0 0 0"/>
+			<geometry><cylinder length="0.643" radius="0.0225"/></geometry>
+			<material name="cylinder_mat"><color rgba="${rgba_black}"/></material>
+		</visual>
+		<collision>
+			<origin xyz="0 0 0" rpy="0 0 0"/>
+			<geometry><cylinder length="0.643" radius="0.0225"/></geometry>
+		</collision>
+	</link>
+		<joint name="top_plate_cube_to_custom_cylinder" type="fixed">
+			<parent link="top_plate_cube"/>
+			<child link="custom_cylinder"/>
+			<!-- Oberseite von top_plate_cube: z=1.02, Zylinder steht mit Unterseite darauf -->
+			<origin xyz="-0.205 0.36 0.325" rpy="0 0 0"/>
 		</joint>
 	  
-  <!-- Erstellt 4 Platten auf der Station aus der Macro -->
+  <!-- Erstellt 2 Platten auf der Station aus der Macro -->
 	<xacro:include filename="$(find custom_ur_description)/urdf/CUSTOM_elementary_unit_macro.xacro"/>
-		<xacro:elementary_unit prefix="u1" pos_on_station="0.0 0.0" rgba="${rgba_black}"/>
-		<xacro:elementary_unit prefix="u2" pos_on_station="0.5 0.0" rgba="${rgba_blue}"/>
-		<xacro:elementary_unit prefix="u3" pos_on_station="0.0 0.5" rgba="${rgba_blue}"/>
-		<xacro:elementary_unit prefix="u4" pos_on_station="0.5 0.5" rgba="${rgba_blue}"/>
+		<xacro:elementary_unit prefix="u1" size_x="0.25" size_y="0.25" height="0.026" pos_on_station="0.12 0.155 0.02" rgba="${rgba_dark_grey}"/>
+		<xacro:elementary_unit prefix="u4" size_x="0.25" size_y="0.405" height="0.026" pos_on_station="0.37 0.405 0.02" rgba="${rgba_light_grey}"/>
+		<!-- WBK Teile -->
+		<xacro:elementary_unit prefix="top_plate" size_x="0.62" size_y="0.81" height="0.02" pos_on_station="0 0 0" rgba="${rgba_pink}"/>
+		<xacro:elementary_unit prefix="wbk1" size_x="0.2" size_y="0.2" height="0.06" pos_on_station="0.395 0.18 0.02" rgba="${rgba_black}"/>
+		<xacro:elementary_unit prefix="wbk12" size_x="0.06" size_y="0.06" height="0.12" pos_on_station="0.495 0.28 0.08" rgba="${rgba_black}"/>
+		<!-- <xacro:elementary_unit prefix="wbk2" size_x="0.2" size_y="0.2" height="0.06" pos_on_station="0.145 0.42 0.02" rgba="${rgba_black}"/> -->
+		<!-- <xacro:elementary_unit prefix="wbk22" size_x="0.06" size_y="0.06" height="0.12" pos_on_station="0.245 0.52 0.08" rgba="${rgba_black}"/> -->
+
+		<!-- Fester Referenz-Frame fuer den ArUco-Ursprung auf der Tischoberseite. -->
+		<!-- Wichtig: Nicht 'aruco_0' nennen, um keinen TF-Konflikt mit dem D405-Tracker zu erzeugen. -->
+		<link name="aruco_table_ref_0"/>
+		<joint name="station_to_aruco_table_ref_0" type="fixed">
+			<parent link="station"/>
+			<child  link="aruco_table_ref_0"/>
+			<origin xyz="${aruco_on_station}" rpy="0 0 0"/>
+		</joint>
+
+		<!-- Zangenablage -->
+		<link name="zangenablage">
+			<visual>
+				<origin xyz="0 0 0" rpy="0 0 0"/>
+				<geometry>
+					<mesh filename="package://custom_ur_description/meshes/CUSTOM_meshes/Ablageflaeche-und-Schraege-V1.stl" scale="1 1 1"/>
+				</geometry>
+				<material name="zangenablage_mat"><color rgba="0.6 0.6 0.6 1.0"/></material>
+			</visual>
+			<collision>
+				<origin xyz="0 0 0" rpy="0 0 0"/>
+				<geometry>
+					<mesh filename="package://custom_ur_description/meshes/CUSTOM_meshes/Ablageflaeche-und-Schraege-V1.stl" scale="1 1 1"/>
+				</geometry>
+			</collision>
+		</link>
+		<joint name="station_to_zangenablage" type="fixed">
+			<parent link="station"/>
+			<child  link="zangenablage"/>
+			<origin xyz="0.37 0.4 0.02" rpy="0 0 1.5708"/>
+		</joint>
+
 	</xacro:macro>
 
 </robot>

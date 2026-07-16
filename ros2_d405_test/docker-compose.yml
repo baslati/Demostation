@@ -1,0 +1,33 @@
+services:
+  d405-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: d405-test-image
+    container_name: d405_test_container
+    restart: unless-stopped
+    network_mode: host
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    environment:
+      - DISPLAY=${DISPLAY}
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - FASTDDS_BUILTIN_TRANSPORTS=UDPv4
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - LIBGL_ALWAYS_SOFTWARE=1
+      - MESA_GL_VERSION_OVERRIDE=3.3
+    runtime: nvidia
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:rw
+      - ./workspace/src:/workspace/src/custom_packages
+      - ../cobot_gui.py:/workspace/cobot_gui.py
+    privileged: true
+    devices:
+      - "/dev/bus/usb:/dev/bus/usb"
+    tty: true
+    stdin_open: true
